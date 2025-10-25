@@ -1,4 +1,7 @@
-import '../models/auth_models.dart';
+import '../features/auth/data/models/login_request_model.dart';
+import '../features/auth/data/models/login_response_model.dart';
+import '../features/auth/data/models/user_model.dart';
+import '../features/auth/data/models/auth_state_model.dart';
 import 'api_service.dart';
 import 'storage_service.dart';
 
@@ -11,7 +14,17 @@ class AuthService {
   // Login with email and password
   Future<AuthState> login(String email, String password, {bool rememberMe = false}) async {
     try {
-      final request = LoginRequest(email: email, password: password);
+      final request = LoginRequestModel(email: email, password: password);
+      
+      // Validate input
+      final validationError = request.getValidationError();
+      if (validationError != null) {
+        return AuthState(
+          error: validationError,
+          isLoading: false,
+        );
+      }
+      
       final response = await _apiService.login(request);
 
       if (response.error) {
@@ -102,7 +115,7 @@ class AuthService {
   }
 
   // Get current user
-  User? getCurrentUser() {
+  UserModel? getCurrentUser() {
     return _storageService.getCurrentUser();
   }
 

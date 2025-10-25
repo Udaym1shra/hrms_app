@@ -45,8 +45,8 @@ class UserModel {
       branchId: json['branchId'],
       employeeId: json['employeeId'],
       role: json['role'] != null ? RoleModel.fromJson(json['role']) : null,
-      tenant: json['tenantId'] != null ? TenantModel.fromJson(json['tenantId']) : null,
-      branch: json['branchId'] != null ? BranchModel.fromJson(json['branchId']) : null,
+      tenant: json['tenant'] != null ? TenantModel.fromJson(json['tenant']) : null,
+      branch: json['branch'] != null ? BranchModel.fromJson(json['branch']) : null,
       employee: json['employee'] != null ? EmployeeModel.fromJson(json['employee']) : null,
     );
   }

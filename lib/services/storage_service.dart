@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/auth_models.dart';
+import '../features/auth/data/models/login_response_model.dart';
+import '../features/auth/data/models/user_model.dart';
 
 class StorageService {
   final SharedPreferences _prefs;
@@ -12,17 +13,17 @@ class StorageService {
   StorageService(this._prefs);
 
   // User Data Storage
-  Future<void> saveUserData(LoginContent loginContent) async {
-    await _prefs.setString(_userDataKey, jsonEncode(loginContent));
+  Future<void> saveUserData(LoginContentModel loginContent) async {
+    await _prefs.setString(_userDataKey, jsonEncode(loginContent.toJson()));
     await _prefs.setString(_tokenKey, loginContent.token);
   }
 
-  LoginContent? getUserData() {
+  LoginContentModel? getUserData() {
     final userDataString = _prefs.getString(_userDataKey);
     if (userDataString != null) {
       try {
         final userDataJson = jsonDecode(userDataString);
-        return LoginContent.fromJson(userDataJson);
+        return LoginContentModel.fromJson(userDataJson);
       } catch (e) {
         return null;
       }
@@ -34,7 +35,7 @@ class StorageService {
     return _prefs.getString(_tokenKey);
   }
 
-  User? getCurrentUser() {
+  UserModel? getCurrentUser() {
     final userData = getUserData();
     return userData?.user;
   }

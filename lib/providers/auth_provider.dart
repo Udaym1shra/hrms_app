@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
-import '../models/auth_models.dart';
+import '../features/auth/data/models/user_model.dart';
+import '../features/auth/data/models/auth_state_model.dart';
 import '../services/auth_service.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -15,7 +16,7 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthenticated => _state.isAuthenticated;
   bool get isLoading => _state.isLoading;
   String? get error => _state.error;
-  User? get user => _state.user;
+  UserModel? get user => _state.user;
   String? get token => _state.token;
 
   // Check authentication status on app start

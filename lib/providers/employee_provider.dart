@@ -86,8 +86,18 @@ class EmployeeProvider with ChangeNotifier {
         _error = response.message;
         return [];
       } else {
-        // Assuming the response contains a list of employees
-        // You may need to adjust this based on your actual API response structure
+        // Extract employees from the response
+        final result = response.content?.result;
+        if (result?.data != null) {
+          // If it's a single employee, return it as a list
+          return [result!.data!];
+        } else if (result?.pagination != null) {
+          // If it's a paginated list, extract the data array
+          final data = result!.pagination!['data'];
+          if (data is List) {
+            return data.map((e) => Employee.fromJson(e)).toList();
+          }
+        }
         return [];
       }
     } catch (e) {

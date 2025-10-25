@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../models/auth_models.dart';
+import '../features/auth/data/models/login_request_model.dart';
+import '../features/auth/data/models/login_response_model.dart';
 import '../models/employee_models.dart';
 import 'storage_service.dart';
 
@@ -41,7 +42,7 @@ class ApiService {
   }
 
   // Authentication APIs
-  Future<LoginResponse> login(LoginRequest request) async {
+  Future<LoginResponseModel> login(LoginRequestModel request) async {
     try {
       final url = Uri.parse('$baseUrl/$hrContext/auth/login');
       final response = await _client.post(
@@ -51,7 +52,7 @@ class ApiService {
       );
 
       final responseData = _handleResponse(response);
-      return LoginResponse.fromJson(responseData);
+      return LoginResponseModel.fromJson(responseData);
     } catch (e) {
       throw Exception('Login failed: $e');
     }

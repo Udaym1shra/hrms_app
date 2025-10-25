@@ -15,12 +15,16 @@ class LoginResponseModel {
   });
 
   factory LoginResponseModel.fromJson(Map<String, dynamic> json) {
-    return LoginResponseModel(
-      code: json['code'] ?? 0,
-      error: json['error'] ?? false,
-      message: json['message'] ?? '',
-      content: json['content'] != null ? LoginContentModel.fromJson(json['content']) : null,
-    );
+    try {
+      return LoginResponseModel(
+        code: json['code'] ?? 0,
+        error: json['error'] ?? false,
+        message: json['message'] ?? '',
+        content: json['content'] != null ? LoginContentModel.fromJson(json['content']) : null,
+      );
+    } catch (e) {
+      throw Exception('Failed to parse login response: $e');
+    }
   }
 
   Map<String, dynamic> toJson() {
@@ -45,11 +49,28 @@ class LoginContentModel {
   });
 
   factory LoginContentModel.fromJson(Map<String, dynamic> json) {
-    return LoginContentModel(
-      token: json['token'] ?? '',
-      user: UserModel.fromJson(json['user'] ?? {}),
-      subscriptions: json['subscriptions'],
-    );
+    try {
+      // Handle different possible JSON structures
+      final subscriptions = json['subscriptions'];
+      List<dynamic>? subscriptionsList;
+      
+      if (subscriptions != null) {
+        if (subscriptions is List) {
+          subscriptionsList = subscriptions;
+        } else if (subscriptions is Map) {
+          // If subscriptions is a Map, convert it to a list or set to null
+          subscriptionsList = null;
+        }
+      }
+      
+      return LoginContentModel(
+        token: json['token'] ?? '',
+        user: UserModel.fromJson(json['user'] ?? {}),
+        subscriptions: subscriptionsList,
+      );
+    } catch (e) {
+      throw Exception('Failed to parse login content: $e');
+    }
   }
 
   Map<String, dynamic> toJson() {

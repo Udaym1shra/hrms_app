@@ -33,22 +33,26 @@ class UserModel {
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
-    return UserModel(
-      id: json['id'] ?? 0,
-      firstName: json['firstName'] ?? '',
-      middleName: json['middleName'],
-      lastName: json['lastName'] ?? '',
-      email: json['email'] ?? '',
-      mobile: json['mobile'],
-      workStatus: json['workStatus'] ?? '',
-      tenantId: json['tenantId'],
-      branchId: json['branchId'],
-      employeeId: json['employeeId'],
-      role: json['role'] != null ? RoleModel.fromJson(json['role']) : null,
-      tenant: json['tenant'] != null ? TenantModel.fromJson(json['tenant']) : null,
-      branch: json['branch'] != null ? BranchModel.fromJson(json['branch']) : null,
-      employee: json['employee'] != null ? EmployeeModel.fromJson(json['employee']) : null,
-    );
+    try {
+      return UserModel(
+        id: json['id'] ?? 0,
+        firstName: json['firstName'] ?? '',
+        middleName: json['middleName'],
+        lastName: json['lastName'] ?? '',
+        email: json['email'] ?? '',
+        mobile: json['mobile'],
+        workStatus: json['workStatus'] ?? '',
+        tenantId: json['tenantId'],
+        branchId: json['branchId'],
+        employeeId: json['employeeId'],
+        role: json['role'] != null ? RoleModel.fromJson(json['role']) : null,
+        tenant: json['tenant'] != null ? TenantModel.fromJson(json['tenant']) : null,
+        branch: json['branch'] != null ? BranchModel.fromJson(json['branch']) : null,
+        employee: json['employee'] != null ? EmployeeModel.fromJson(json['employee']) : null,
+      );
+    } catch (e) {
+      throw Exception('Failed to parse user data: $e');
+    }
   }
 
   Map<String, dynamic> toJson() {

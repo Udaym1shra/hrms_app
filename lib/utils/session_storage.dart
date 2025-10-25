@@ -149,11 +149,11 @@ class SessionStorage {
     }
   }
 
-  // Get company ID
+  // Get company ID (from tenant if available)
   static Future<int?> getCompanyId() async {
     try {
       final user = await getUser();
-      return user?.companyId;
+      return user?.tenant?.id;
     } catch (e) {
       print('Failed to get company ID: $e');
       return null;
@@ -219,7 +219,7 @@ class SessionStorageHook {
       isManager: userData?['user']?['role']?['id'] == 3,
       tenantId: userData?['user']?['tenantId'],
       branchId: userData?['user']?['branchId'],
-      companyId: userData?['user']?['companyId'],
+      companyId: userData?['user']?['tenant']?['id'],
     );
   }
 }

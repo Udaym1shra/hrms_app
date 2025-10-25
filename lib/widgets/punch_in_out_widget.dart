@@ -103,7 +103,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
         employeeId: widget.employeeId,
         lat: _currentPosition!.latitude,
         lon: _currentPosition!.longitude,
-        dateWithTime: now.toISOString(),
+        dateWithTime: now.toIso8601String(),
         tenantId: widget.tenantId,
       );
 
@@ -153,7 +153,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
         employeeId: widget.employeeId,
         lat: _currentPosition!.latitude,
         lon: _currentPosition!.longitude,
-        dateWithTime: now.toISOString(),
+        dateWithTime: now.toIso8601String(),
         tenantId: widget.tenantId,
       );
 

@@ -189,8 +189,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           Consumer<EmployeeProvider>(
             builder: (context, employeeProvider, child) {
               return PunchInOutWidget(
-                employeeId: employeeProvider.employee?.id ?? 0,
-                tenantId: employeeProvider.employee?.tenantIds ?? 0,
                 apiService: Provider.of<EmployeeProvider>(
                   context,
                   listen: false,

@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../utils/app_theme.dart';
+import '../utils/session_storage.dart';
 import '../services/api_service.dart';
 import 'custom_button.dart';
 
 class PunchInOutWidget extends StatefulWidget {
-  final int employeeId;
-  final int tenantId;
   final ApiService apiService;
 
   const PunchInOutWidget({
     Key? key,
-    required this.employeeId,
-    required this.tenantId,
     required this.apiService,
   }) : super(key: key);
 
@@ -26,11 +23,28 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
   String? _currentLocation;
   Position? _currentPosition;
   String? _error;
+  int? _employeeId;
+  int? _tenantId;
 
   @override
   void initState() {
     super.initState();
+    _loadSessionData();
     _checkLocationPermission();
+  }
+
+  Future<void> _loadSessionData() async {
+    try {
+      final sessionData = await useSession();
+      setState(() {
+        _employeeId = sessionData.employeeId;
+        _tenantId = sessionData.tenantId;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load session data: $e';
+      });
+    }
   }
 
   Future<void> _checkLocationPermission() async {
@@ -87,6 +101,13 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
   }
 
   Future<void> _handlePunchIn() async {
+    if (_employeeId == null || _tenantId == null) {
+      setState(() {
+        _error = 'Employee ID or Tenant ID not available';
+      });
+      return;
+    }
+
     if (_currentPosition == null) {
       await _getCurrentLocation();
       if (_currentPosition == null) return;
@@ -100,11 +121,11 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
     try {
       final now = DateTime.now();
       final response = await widget.apiService.punchIn(
-        employeeId: widget.employeeId,
+        employeeId: _employeeId!,
         lat: _currentPosition!.latitude,
         lon: _currentPosition!.longitude,
         dateWithTime: now.toIso8601String(),
-        tenantId: widget.tenantId,
+        tenantId: _tenantId!,
       );
 
       if (response['error'] == false) {
@@ -137,6 +158,13 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
   }
 
   Future<void> _handlePunchOut() async {
+    if (_employeeId == null || _tenantId == null) {
+      setState(() {
+        _error = 'Employee ID or Tenant ID not available';
+      });
+      return;
+    }
+
     if (_currentPosition == null) {
       await _getCurrentLocation();
       if (_currentPosition == null) return;
@@ -150,11 +178,11 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
     try {
       final now = DateTime.now();
       final response = await widget.apiService.punchOut(
-        employeeId: widget.employeeId,
+        employeeId: _employeeId!,
         lat: _currentPosition!.latitude,
         lon: _currentPosition!.longitude,
         dateWithTime: now.toIso8601String(),
-        tenantId: widget.tenantId,
+        tenantId: _tenantId!,
       );
 
       if (response['error'] == false) {

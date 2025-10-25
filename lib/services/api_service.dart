@@ -174,8 +174,7 @@ class ApiService {
     required int employeeId,
     required double lat,
     required double lon,
-    required String date,
-    required String time,
+    required String dateWithTime,
     required int tenantId,
   }) async {
     try {
@@ -187,8 +186,7 @@ class ApiService {
           'employeeId': employeeId,
           'lat': lat,
           'lon': lon,
-          'date': date,
-          'time': time,
+          'date': dateWithTime,
           'tenantId': tenantId,
         }),
       );
@@ -204,8 +202,7 @@ class ApiService {
     required int employeeId,
     required double lat,
     required double lon,
-    required String date,
-    required String time,
+    required String dateWithTime,
     required int tenantId,
   }) async {
     try {
@@ -217,8 +214,7 @@ class ApiService {
           'employeeId': employeeId,
           'lat': lat,
           'lon': lon,
-          'date': date,
-          'time': time,
+          'date': dateWithTime,
           'tenantId': tenantId,
           'action': 'PunchIn', // Add action type to distinguish punch in/out
         }),
@@ -234,8 +230,7 @@ class ApiService {
     required int employeeId,
     required double lat,
     required double lon,
-    required String date,
-    required String time,
+    required String dateWithTime,
     required int tenantId,
   }) async {
     try {
@@ -247,8 +242,7 @@ class ApiService {
           'employeeId': employeeId,
           'lat': lat,
           'lon': lon,
-          'date': date,
-          'time': time,
+          'date': dateWithTime,
           'tenantId': tenantId,
           'action': 'PunchOut', // Add action type to distinguish punch in/out
         }),

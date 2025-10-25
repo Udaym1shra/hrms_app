@@ -3,6 +3,8 @@ import 'package:http/http.dart' as http;
 import '../features/auth/data/models/login_request_model.dart';
 import '../features/auth/data/models/login_response_model.dart';
 import '../models/employee_models.dart';
+import '../models/attendance_models.dart';
+import '../core/network/api_endpoints.dart';
 import 'storage_service.dart';
 
 class ApiService {
@@ -207,8 +209,8 @@ class ApiService {
     required int tenantId,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/attendance/punch-in');
-      final response = await _client.post(
+      final url = Uri.parse('$baseUrl${ApiEndpoints.markAttendance(employeeId)}');
+      final response = await _client.put(
         url,
         headers: _getHeaders(),
         body: jsonEncode({
@@ -218,6 +220,7 @@ class ApiService {
           'date': date,
           'time': time,
           'tenantId': tenantId,
+          'action': 'PunchIn', // Add action type to distinguish punch in/out
         }),
       );
 
@@ -236,8 +239,8 @@ class ApiService {
     required int tenantId,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/attendance/punch-out');
-      final response = await _client.post(
+      final url = Uri.parse('$baseUrl${ApiEndpoints.markAttendance(employeeId)}');
+      final response = await _client.put(
         url,
         headers: _getHeaders(),
         body: jsonEncode({
@@ -247,12 +250,107 @@ class ApiService {
           'date': date,
           'time': time,
           'tenantId': tenantId,
+          'action': 'PunchOut', // Add action type to distinguish punch in/out
         }),
       );
 
       return _handleResponse(response);
     } catch (e) {
       throw Exception('Punch out failed: $e');
+    }
+  }
+
+  // Attendance APIs - Get attendance by ID
+  Future<AttendanceByIdResponse> getAttendanceById(int attendanceId) async {
+    try {
+      final url = Uri.parse('$baseUrl${ApiEndpoints.getAttendanceById(attendanceId)}');
+      final response = await _client.get(url, headers: _getHeaders());
+
+      final responseData = _handleResponse(response);
+      return AttendanceByIdResponse.fromJson(responseData);
+    } catch (e) {
+      throw Exception('Failed to fetch attendance: $e');
+    }
+  }
+
+  // Attendance APIs - Get attendance list
+  Future<AttendanceResponse> getAttendanceList({
+    int? employeeId,
+    int? tenantId,
+    String? startDate,
+    String? endDate,
+    int limit = 10,
+    int page = 1,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl${ApiEndpoints.attendance}').replace(
+        queryParameters: {
+          'limit': limit.toString(),
+          'page': page.toString(),
+          if (employeeId != null) 'employeeId': employeeId.toString(),
+          if (tenantId != null) 'tenantId': tenantId.toString(),
+          if (startDate != null) 'startDate': startDate,
+          if (endDate != null) 'endDate': endDate,
+        },
+      );
+
+      final response = await _client.get(uri, headers: _getHeaders());
+
+      final responseData = _handleResponse(response);
+      return AttendanceResponse.fromJson(responseData);
+    } catch (e) {
+      throw Exception('Failed to fetch attendance list: $e');
+    }
+  }
+
+  // Attendance APIs - Get today's attendance for employee
+  Future<AttendanceResponse> getTodayAttendance(int employeeId, int tenantId) async {
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0]; // YYYY-MM-DD format
+      final uri = Uri.parse('$baseUrl${ApiEndpoints.attendance}').replace(
+        queryParameters: {
+          'employeeId': employeeId.toString(),
+          'tenantId': tenantId.toString(),
+          'date': today,
+          'limit': '1',
+        },
+      );
+
+      final response = await _client.get(uri, headers: _getHeaders());
+
+      final responseData = _handleResponse(response);
+      return AttendanceResponse.fromJson(responseData);
+    } catch (e) {
+      throw Exception('Failed to fetch today\'s attendance: $e');
+    }
+  }
+
+  // Attendance APIs - Get employee punching details
+  Future<EmployeePunchingDetailsResponse> getEmployeePunchingDetails(int employeeId) async {
+    try {
+      final url = Uri.parse('$baseUrl${ApiEndpoints.getEmployeePunchingDetails(employeeId)}');
+      final response = await _client.get(url, headers: _getHeaders());
+
+      final responseData = _handleResponse(response);
+      return EmployeePunchingDetailsResponse.fromJson(responseData);
+    } catch (e) {
+      throw Exception('Failed to fetch employee punching details: $e');
+    }
+  }
+
+  // Attendance APIs - Update attendance
+  Future<Map<String, dynamic>> updateAttendance(AttendanceUpdatePayload payload) async {
+    try {
+      final url = Uri.parse('$baseUrl${ApiEndpoints.attendance}');
+      final response = await _client.put(
+        url,
+        headers: _getHeaders(),
+        body: jsonEncode(payload.toJson()),
+      );
+
+      return _handleResponse(response);
+    } catch (e) {
+      throw Exception('Failed to update attendance: $e');
     }
   }
 

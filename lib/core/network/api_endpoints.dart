@@ -31,8 +31,11 @@ class ApiEndpoints {
   
   // Attendance endpoints
   static const String attendance = '/$hrContext/attendance';
-  static const String punchIn = '/$hrContext/attendance/punch-in';
-  static const String punchOut = '/$hrContext/attendance/punch-out';
+  static String markAttendance(int employeeId) => '/$hrContext/attendance/mark-attendance/$employeeId';
+  static String getAttendanceById(int attendanceId) => '/$hrContext/attendance/get/list/$attendanceId';
+  static String getEmployeePunchingDetails(int employeeId) => '/$hrContext/attendance/employee/$employeeId';
+  static const String punchIn = '/$hrContext/attendance/punch-in'; // Legacy - use markAttendance instead
+  static const String punchOut = '/$hrContext/attendance/punch-out'; // Legacy - use markAttendance instead
   
   // Leave endpoints
   static const String leaves = '/$hrContext/leaves';

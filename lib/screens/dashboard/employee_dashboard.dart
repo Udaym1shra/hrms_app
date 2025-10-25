@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/employee_provider.dart';
-import '../../models/auth_models.dart';
+import '../../features/auth/data/models/user_model.dart';
 import '../../models/employee_models.dart';
 import '../../utils/app_theme.dart';
 import '../../widgets/sidebar.dart';

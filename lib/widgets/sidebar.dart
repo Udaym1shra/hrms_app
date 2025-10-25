@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
-import '../models/auth_models.dart';
+import '../features/auth/data/models/user_model.dart';
 
 class Sidebar extends StatelessWidget {
-  final User? user;
+  final UserModel? user;
   final int selectedIndex;
   final Function(int) onItemSelected;
   final VoidCallback? onLogout;

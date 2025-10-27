@@ -12,6 +12,14 @@ class AppTheme {
   static Color get errorColor => AppColors.error;
   static Color get warningColor => AppColors.warning;
 
+  // Geofencing-specific colors
+  static Color getGeofenceStatusColor(bool isInside) =>
+      AppColors.getGeofenceStatusColor(isInside);
+  static Color getGeofenceStatusLightColor(bool isInside) =>
+      AppColors.getGeofenceStatusLightColor(isInside);
+  static Color getLocationPermissionColor(String status) =>
+      AppColors.getLocationPermissionColor(status);
+
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,

@@ -197,16 +197,125 @@ class ApiService {
     }
   }
 
+  // Get geofence configuration for employee
+  Future<Map<String, dynamic>> getEmployeeGeofenceConfig({
+    required int employeeId,
+    int? tenantId,
+  }) async {
+    try {
+      final uri =
+          Uri.parse(
+            '$baseUrl/$hrContext/geofencing-config/employee/$employeeId',
+          ).replace(
+            queryParameters: {
+              if (tenantId != null) 'tenantId': tenantId.toString(),
+            },
+          );
+
+      final response = await _client.get(uri, headers: _getHeaders());
+
+      return _handleResponse(response);
+    } catch (e) {
+      throw Exception('Failed to fetch employee geofence config: $e');
+    }
+  }
+
+  // Validate location against geofence
+  Future<Map<String, dynamic>> validateLocationAgainstGeofence({
+    required int employeeId,
+    required double lat,
+    required double lon,
+    int? tenantId,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/$hrContext/geofencing-config/validate');
+      final response = await _client.post(
+        url,
+        headers: _getHeaders(),
+        body: jsonEncode({
+          'employeeId': employeeId,
+          'lat': lat,
+          'lon': lon,
+          if (tenantId != null) 'tenantId': tenantId,
+        }),
+      );
+
+      return _handleResponse(response);
+    } catch (e) {
+      throw Exception('Failed to validate location against geofence: $e');
+    }
+  }
+
+  // Get employee location history
+  Future<Map<String, dynamic>> getEmployeeLocationHistory({
+    required int employeeId,
+    String? startDate,
+    String? endDate,
+    int limit = 50,
+    int page = 1,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/$hrContext/geofencing-employee-location')
+          .replace(
+            queryParameters: {
+              'employeeId': employeeId.toString(),
+              'limit': limit.toString(),
+              'page': page.toString(),
+              if (startDate != null) 'startDate': startDate,
+              if (endDate != null) 'endDate': endDate,
+            },
+          );
+
+      final response = await _client.get(uri, headers: _getHeaders());
+
+      return _handleResponse(response);
+    } catch (e) {
+      throw Exception('Failed to fetch employee location history: $e');
+    }
+  }
+
+  // Update geofence configuration
+  Future<Map<String, dynamic>> updateGeofenceConfig({
+    required int employeeId,
+    required double latitude,
+    required double longitude,
+    required double radius,
+    String? name,
+    int? tenantId,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/$hrContext/geofencing-config');
+      final response = await _client.put(
+        url,
+        headers: _getHeaders(),
+        body: jsonEncode({
+          'employeeId': employeeId,
+          'latitude': latitude,
+          'longitude': longitude,
+          'radius': radius,
+          if (name != null) 'name': name,
+          if (tenantId != null) 'tenantId': tenantId,
+        }),
+      );
+
+      return _handleResponse(response);
+    } catch (e) {
+      throw Exception('Failed to update geofence config: $e');
+    }
+  }
+
   // Attendance APIs
   Future<Map<String, dynamic>> punchIn({
     required int employeeId,
     required double lat,
     required double lon,
     required String dateWithTime,
-    required int tenantId,
+    // required int tenantId,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl${ApiEndpoints.markAttendance(employeeId)}');
+      final url = Uri.parse(
+        '$baseUrl${ApiEndpoints.markAttendance(employeeId)}',
+      );
       final response = await _client.put(
         url,
         headers: _getHeaders(),
@@ -215,8 +324,8 @@ class ApiService {
           'lat': lat,
           'lon': lon,
           'date': dateWithTime,
-          'tenantId': tenantId,
-          'action': 'PunchIn', // Add action type to distinguish punch in/out
+          // 'tenantId': tenantId,
+          // 'action': 'PunchIn', // Add action type to distinguish punch in/out
         }),
       );
 
@@ -231,10 +340,12 @@ class ApiService {
     required double lat,
     required double lon,
     required String dateWithTime,
-    required int tenantId,
+    // required int tenantId,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl${ApiEndpoints.markAttendance(employeeId)}');
+      final url = Uri.parse(
+        '$baseUrl${ApiEndpoints.markAttendance(employeeId)}',
+      );
       final response = await _client.put(
         url,
         headers: _getHeaders(),
@@ -243,8 +354,8 @@ class ApiService {
           'lat': lat,
           'lon': lon,
           'date': dateWithTime,
-          'tenantId': tenantId,
-          'action': 'PunchOut', // Add action type to distinguish punch in/out
+          // 'tenantId': tenantId,
+          // 'action': 'PunchOut', // Add action type to distinguish punch in/out
         }),
       );
 
@@ -257,13 +368,50 @@ class ApiService {
   // Attendance APIs - Get attendance by ID
   Future<AttendanceByIdResponse> getAttendanceById(int attendanceId) async {
     try {
-      final url = Uri.parse('$baseUrl${ApiEndpoints.getAttendanceById(attendanceId)}');
+      final url = Uri.parse(
+        '$baseUrl${ApiEndpoints.getAttendanceById(attendanceId)}',
+      );
       final response = await _client.get(url, headers: _getHeaders());
 
       final responseData = _handleResponse(response);
       return AttendanceByIdResponse.fromJson(responseData);
     } catch (e) {
       throw Exception('Failed to fetch attendance: $e');
+    }
+  }
+
+  // Get attendance list by attendance ID using the specific URL format
+  Future<Map<String, dynamic>> getAttendanceListById(int attendanceId) async {
+    try {
+      final url = Uri.parse(
+        '$baseUrl${ApiEndpoints.attendance}/get/list/$attendanceId',
+      );
+      final response = await _client.get(url, headers: _getHeaders());
+
+      final responseData = _handleResponse(response);
+      return responseData;
+    } catch (e) {
+      throw Exception('Failed to fetch attendance list by ID: $e');
+    }
+  }
+
+  // Get attendance logs by employee ID and date
+  Future<Map<String, dynamic>> getAttendanceLogsByEmployeeAndDate({
+    required int employeeId,
+    required String date,
+  }) async {
+    try {
+      final url = Uri.parse(
+        '$baseUrl/$hrContext/attendance/$employeeId',
+      ).replace(queryParameters: {'date': date, 'limit': '10'});
+      final response = await _client.get(url, headers: _getHeaders());
+
+      final responseData = _handleResponse(response);
+      return responseData;
+    } catch (e) {
+      throw Exception(
+        'Failed to fetch attendance logs by employee and date: $e',
+      );
     }
   }
 
@@ -277,16 +425,31 @@ class ApiService {
     int page = 1,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl${ApiEndpoints.attendance}').replace(
-        queryParameters: {
-          'limit': limit.toString(),
-          'page': page.toString(),
-          if (employeeId != null) 'employeeId': employeeId.toString(),
-          if (tenantId != null) 'tenantId': tenantId.toString(),
-          if (startDate != null) 'startDate': startDate,
-          if (endDate != null) 'endDate': endDate,
-        },
-      );
+      Uri uri;
+
+      if (employeeId != null) {
+        // Use path parameter when employeeId is provided
+        uri = Uri.parse('$baseUrl/$hrContext/attendance/$employeeId').replace(
+          queryParameters: {
+            'limit': limit.toString(),
+            'page': page.toString(),
+            if (tenantId != null) 'tenantId': tenantId.toString(),
+            if (startDate != null) 'startDate': startDate,
+            if (endDate != null) 'endDate': endDate,
+          },
+        );
+      } else {
+        // Use query parameters when no specific employeeId
+        uri = Uri.parse('$baseUrl${ApiEndpoints.attendance}').replace(
+          queryParameters: {
+            'limit': limit.toString(),
+            'page': page.toString(),
+            if (tenantId != null) 'tenantId': tenantId.toString(),
+            if (startDate != null) 'startDate': startDate,
+            if (endDate != null) 'endDate': endDate,
+          },
+        );
+      }
 
       final response = await _client.get(uri, headers: _getHeaders());
 
@@ -298,21 +461,17 @@ class ApiService {
   }
 
   // Attendance APIs - Get today's attendance for employee
-  Future<AttendanceResponse> getTodayAttendance(int employeeId, int tenantId) async {
+  Future<AttendanceResponse> getTodayAttendance(
+    int employeeId,
+    int tenantId,
+  ) async {
     try {
-      final today = DateTime.now().toIso8601String().split('T')[0]; // YYYY-MM-DD format
-      final uri = Uri.parse('$baseUrl${ApiEndpoints.attendance}').replace(
-        queryParameters: {
-          'employeeId': employeeId.toString(),
-          'tenantId': tenantId.toString(),
-          'date': today,
-          'limit': '1',
-        },
-      );
+      final uri = Uri.parse('$baseUrl/$hrContext/attendance/$employeeId');
 
       final response = await _client.get(uri, headers: _getHeaders());
 
       final responseData = _handleResponse(response);
+      print('Today\'s attendance response: $responseData');
       return AttendanceResponse.fromJson(responseData);
     } catch (e) {
       throw Exception('Failed to fetch today\'s attendance: $e');
@@ -320,9 +479,13 @@ class ApiService {
   }
 
   // Attendance APIs - Get employee punching details
-  Future<EmployeePunchingDetailsResponse> getEmployeePunchingDetails(int employeeId) async {
+  Future<EmployeePunchingDetailsResponse> getEmployeePunchingDetails(
+    int employeeId,
+  ) async {
     try {
-      final url = Uri.parse('$baseUrl${ApiEndpoints.getEmployeePunchingDetails(employeeId)}');
+      final url = Uri.parse(
+        '$baseUrl${ApiEndpoints.getEmployeePunchingDetails(employeeId)}',
+      );
       final response = await _client.get(url, headers: _getHeaders());
 
       final responseData = _handleResponse(response);
@@ -333,7 +496,9 @@ class ApiService {
   }
 
   // Attendance APIs - Update attendance
-  Future<Map<String, dynamic>> updateAttendance(AttendanceUpdatePayload payload) async {
+  Future<Map<String, dynamic>> updateAttendance(
+    AttendanceUpdatePayload payload,
+  ) async {
     try {
       final url = Uri.parse('$baseUrl${ApiEndpoints.attendance}');
       final response = await _client.put(

@@ -24,7 +24,7 @@ class SessionStorage {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userDataString = prefs.getString(_userDataKey);
-      
+
       if (userDataString != null) {
         print('userData from storage: $userDataString');
         return jsonDecode(userDataString);
@@ -130,8 +130,59 @@ class SessionStorage {
   // Get tenant ID
   static Future<int?> getTenantId() async {
     try {
-      final user = await getUser();
-      return user?.tenantId;
+      final userData = await getUserData();
+      if (userData == null) return null;
+
+      // Extract tenantId from various sources
+      int? tenantId = userData['user']?['tenantId'];
+      print('Direct tenantId from user: $tenantId');
+
+      if (tenantId == null) {
+        // Try to get tenantId from branch
+        tenantId = userData['user']?['branch']?['tenantId'];
+        print('TenantId from branch: $tenantId');
+      }
+
+      if (tenantId == null) {
+        // Try to get tenantId from tenant object
+        tenantId = userData['user']?['tenant']?['id'];
+        print('TenantId from tenant object: $tenantId');
+      }
+
+      if (tenantId == null) {
+        // Try to get tenantId from JWT token
+        final token = userData['token'];
+        if (token != null) {
+          try {
+            final parts = token.split('.');
+            if (parts.length == 3) {
+              final payload = parts[1];
+              final padding = ((4 - payload.length % 4) % 4).toInt();
+              final padded = payload + '=' * padding;
+              final decoded = utf8.decode(base64.decode(padded));
+              final payloadMap = jsonDecode(decoded);
+
+              // Try multiple possible keys for tenantId
+              tenantId =
+                  payloadMap['companyId'] ??
+                  payloadMap['tenantId'] ??
+                  payloadMap['tenant_id'] ??
+                  payloadMap['company_id'];
+              print('Extracted tenantId from JWT: $tenantId');
+            }
+          } catch (e) {
+            print('Failed to decode JWT token: $e');
+          }
+        }
+      }
+
+      // Final fallback - try to get from companyId in user data
+      if (tenantId == null) {
+        tenantId = userData['user']?['companyId'];
+        print('Final fallback tenantId from companyId: $tenantId');
+      }
+
+      return tenantId;
     } catch (e) {
       print('Failed to get tenant ID: $e');
       return null;
@@ -168,7 +219,7 @@ class SessionStorage {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userDataKey, jsonEncode(userData));
-      
+
       // Also save token separately for quick access
       if (userData['token'] != null) {
         await prefs.setString(_tokenKey, userData['token']);
@@ -207,17 +258,81 @@ class SessionStorage {
 class SessionStorageHook {
   static Future<SessionStorageData> useSessionStorage() async {
     final userData = await SessionStorage.getUserData();
-    
+    print('userData in useSessionStorage: $userData');
+
+    // Extract tenantId from various sources
+    int? tenantId = userData?['user']?['tenantId'];
+    print('Direct tenantId from user: $tenantId');
+
+    if (tenantId == null) {
+      // Try to get tenantId from branch
+      tenantId = userData?['user']?['branch']?['tenantId'];
+      print('TenantId from branch: $tenantId');
+    }
+
+    if (tenantId == null) {
+      // Try to get tenantId from tenant object
+      tenantId = userData?['user']?['tenant']?['id'];
+      print('TenantId from tenant object: $tenantId');
+    }
+
+    if (tenantId == null) {
+      // Try to get tenantId from JWT token (companyId)
+      final token = userData?['token'];
+      print('Attempting to extract tenantId from JWT token...');
+      if (token != null) {
+        try {
+          // Decode JWT token to get companyId which should be tenantId
+          final parts = token.split('.');
+          print('JWT parts count: ${parts.length}');
+          if (parts.length == 3) {
+            final payload = parts[1];
+            print('JWT payload: $payload');
+            // Add padding if needed
+            final padding = ((4 - payload.length % 4) % 4).toInt();
+            final padded = payload + '=' * padding;
+            print('Padded payload: $padded');
+            final decoded = utf8.decode(base64.decode(padded));
+            print('Decoded payload: $decoded');
+            final payloadMap = jsonDecode(decoded);
+            print('Payload map: $payloadMap');
+
+            // Try multiple possible keys for tenantId
+            tenantId =
+                payloadMap['companyId'] ??
+                payloadMap['tenantId'] ??
+                payloadMap['tenant_id'] ??
+                payloadMap['company_id'];
+            print('Extracted tenantId from JWT: $tenantId');
+          }
+        } catch (e) {
+          print('Failed to decode JWT token: $e');
+        }
+      } else {
+        print('No JWT token available');
+      }
+    }
+
+    // Final fallback - try to get from companyId in user data
+    if (tenantId == null) {
+      tenantId = userData?['user']?['companyId'];
+      print('Final fallback tenantId from companyId: $tenantId');
+    }
+
     return SessionStorageData(
-      user: userData?['user'] != null ? UserModel.fromJson(userData!['user']) : null,
+      user: userData?['user'] != null
+          ? UserModel.fromJson(userData!['user'])
+          : null,
       jwtToken: userData?['token'],
-      role: userData?['user']?['role'] != null ? RoleModel.fromJson(userData!['user']['role']) : null,
+      role: userData?['user']?['role'] != null
+          ? RoleModel.fromJson(userData!['user']['role'])
+          : null,
       employeeId: userData?['user']?['employeeId'],
       isAdmin: userData?['user']?['role']?['id'] == 1,
       isSuperAdmin: userData?['user']?['role']?['id'] == 8,
       isHR: userData?['user']?['role']?['id'] == 2,
       isManager: userData?['user']?['role']?['id'] == 3,
-      tenantId: userData?['user']?['tenantId'],
+      tenantId: tenantId,
       branchId: userData?['user']?['branchId'],
       companyId: userData?['user']?['tenant']?['id'],
     );
@@ -227,15 +342,20 @@ class SessionStorageHook {
 // Extension to provide destructuring-like functionality
 extension SessionStorageDestructuring on SessionStorageData {
   // Destructuring methods for common use cases
-  ({int? tenantId, bool isAdmin}) get tenantAndAdmin => (tenantId: tenantId, isAdmin: isAdmin);
-  
-  ({int? employeeId, bool isManager}) get employeeAndManager => (employeeId: employeeId, isManager: isManager);
-  
-  ({UserModel? user, String? jwtToken}) get userAndToken => (user: user, jwtToken: jwtToken);
-  
-  ({bool isAdmin, bool isHR, bool isManager}) get roleChecks => (isAdmin: isAdmin, isHR: isHR, isManager: isManager);
-  
-  ({int? tenantId, int? branchId, int? companyId}) get organizationIds => (tenantId: tenantId, branchId: branchId, companyId: companyId);
+  ({int? tenantId, bool isAdmin}) get tenantAndAdmin =>
+      (tenantId: tenantId, isAdmin: isAdmin);
+
+  ({int? employeeId, bool isManager}) get employeeAndManager =>
+      (employeeId: employeeId, isManager: isManager);
+
+  ({UserModel? user, String? jwtToken}) get userAndToken =>
+      (user: user, jwtToken: jwtToken);
+
+  ({bool isAdmin, bool isHR, bool isManager}) get roleChecks =>
+      (isAdmin: isAdmin, isHR: isHR, isManager: isManager);
+
+  ({int? tenantId, int? branchId, int? companyId}) get organizationIds =>
+      (tenantId: tenantId, branchId: branchId, companyId: companyId);
 }
 
 // Global function for easy access (similar to React hook)

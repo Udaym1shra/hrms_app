@@ -5,18 +5,13 @@ import '../utils/app_theme.dart';
 class ProfileCard extends StatelessWidget {
   final Employee employee;
 
-  const ProfileCard({
-    Key? key,
-    required this.employee,
-  }) : super(key: key);
+  const ProfileCard({Key? key, required this.employee}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Card(
       elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -43,9 +38,9 @@ class ProfileCard extends StatelessWidget {
                         )
                       : null,
                 ),
-                
+
                 const SizedBox(width: 16),
-                
+
                 // Employee Info
                 Expanded(
                   child: Column(
@@ -53,10 +48,11 @@ class ProfileCard extends StatelessWidget {
                     children: [
                       Text(
                         employee.fullName,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
-                        ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -76,15 +72,22 @@ class ProfileCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                
+
                 // Status Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(employee.workStatus).withOpacity(0.1),
+                    color: _getStatusColor(
+                      employee.workStatus,
+                    ).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: _getStatusColor(employee.workStatus).withOpacity(0.3),
+                      color: _getStatusColor(
+                        employee.workStatus,
+                      ).withOpacity(0.3),
                     ),
                   ),
                   child: Text(
@@ -98,9 +101,9 @@ class ProfileCard extends StatelessWidget {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             // Employee Details
             Container(
               padding: const EdgeInsets.all(16),
@@ -163,11 +166,7 @@ class ProfileCard extends StatelessWidget {
   ) {
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 20,
-          color: AppTheme.textSecondary,
-        ),
+        Icon(icon, size: 20, color: AppTheme.textSecondary),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -212,7 +211,7 @@ class ProfileCard extends StatelessWidget {
     if (dateString == null || dateString.isEmpty) {
       return 'N/A';
     }
-    
+
     try {
       final date = DateTime.parse(dateString);
       return '${date.day}/${date.month}/${date.year}';

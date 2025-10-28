@@ -23,7 +23,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   int _selectedIndex = 0;
   bool _isSidebarOpen = false;
   late GeofenceService _geofenceService;
-  bool _isInsideGeofence = false;
   bool _isGeofencingSupported = false;
 
   @override
@@ -63,13 +62,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         _geofenceService.setApiService(employeeProvider.apiService);
 
         // Listen to geofence status changes
-        _geofenceService.isInsideGeofence.listen((isInside) {
-          if (mounted) {
-            setState(() {
-              _isInsideGeofence = isInside;
-            });
-          }
-        });
 
         // Load geofence configuration for the employee
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -165,29 +157,47 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       builder: (context, authProvider, employeeProvider, child) {
         return Scaffold(
           backgroundColor: AppTheme.backgroundColor,
-          body: Row(
+          body: Stack(
             children: [
-              // Sidebar
-              if (_isSidebarOpen || MediaQuery.of(context).size.width > 768)
-                Sidebar(
-                  user: authProvider.user,
-                  selectedIndex: _selectedIndex,
-                  onItemSelected: _onSidebarItemSelected,
-                  onLogout: _handleLogout,
-                ),
+              Row(
+                children: [
+                  // Sidebar
+                  if (_isSidebarOpen || MediaQuery.of(context).size.width > 768)
+                    Sidebar(
+                      user: authProvider.user,
+                      selectedIndex: _selectedIndex,
+                      onItemSelected: _onSidebarItemSelected,
+                      onLogout: _handleLogout,
+                    ),
 
-              // Main Content
-              Expanded(
-                child: Column(
-                  children: [
-                    // Top App Bar
-                    _buildAppBar(context, authProvider),
+                  // Main Content
+                  Expanded(
+                    child: Column(
+                      children: [
+                        // Top App Bar
+                        _buildAppBar(context, authProvider),
 
-                    // Main Content Area
-                    Expanded(child: _buildMainContent(employeeProvider)),
-                  ],
-                ),
+                        // Main Content Area
+                        Expanded(child: _buildMainContent(employeeProvider)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+
+              // Mobile backdrop overlay
+              if (_isSidebarOpen && MediaQuery.of(context).size.width <= 768)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isSidebarOpen = false;
+                    });
+                  },
+                  child: Container(
+                    color: Colors.black.withOpacity(0.5),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
             ],
           ),
         );
@@ -311,11 +321,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
           const SizedBox(height: 24),
 
-          // Geofence Status Card
-          _buildGeofenceStatusCard(),
-
-          const SizedBox(height: 24),
-
           // Geofence Map
           FutureBuilder<Map<String, dynamic>>(
             future: _getEmployeeAndTenantData(),
@@ -387,187 +392,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           _buildQuickStats(),
         ],
       ),
-    );
-  }
-
-  Widget _buildGeofenceStatusCard() {
-    if (!_isGeofencingSupported) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(Icons.location_off, color: AppTheme.warningColor, size: 32),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Geofencing Not Supported',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.warningColor,
-                      ),
-                    ),
-                    Text(
-                      'This device does not support geofencing features.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final geofence = _geofenceService.getCurrentGeofence();
-    if (geofence == null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(
-                Icons.location_searching,
-                color: AppTheme.textSecondary,
-                size: 32,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'No Geofence Configured',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                    Text(
-                      'Contact your administrator to set up geofencing.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  _isInsideGeofence ? Icons.location_on : Icons.location_off,
-                  color: AppTheme.getGeofenceStatusColor(_isInsideGeofence),
-                  size: 32,
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Geofence Status',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        _isInsideGeofence
-                            ? 'Inside Office Area'
-                            : 'Outside Office Area',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppTheme.getGeofenceStatusColor(
-                            _isInsideGeofence,
-                          ),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.settings),
-                      onPressed: () => _showGeofenceSetupDialog(),
-                      tooltip: 'Setup Geofence',
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.info_outline),
-                      onPressed: () =>
-                          _geofenceService.showGeofenceStatusDialog(context),
-                      tooltip: 'Geofence Info',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildGeofenceInfo(
-                    'Location',
-                    geofence['name'] ?? 'Office',
-                    Icons.business,
-                  ),
-                ),
-                Expanded(
-                  child: _buildGeofenceInfo(
-                    'Radius',
-                    '${geofence['radius']?.toStringAsFixed(0) ?? '100'}m',
-                    Icons.radio_button_unchecked,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGeofenceInfo(String label, String value, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: AppTheme.textSecondary),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
-              ),
-              Text(
-                value,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -1368,127 +1192,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               await authProvider.logout();
             },
             child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showGeofenceSetupDialog() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-    final TextEditingController latController = TextEditingController(
-      text: '12.9716',
-    );
-    final TextEditingController lonController = TextEditingController(
-      text: '77.5946',
-    );
-    final TextEditingController radiusController = TextEditingController(
-      text: '100',
-    );
-    final TextEditingController nameController = TextEditingController(
-      text: 'Office Location',
-    );
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Setup Geofence'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Location Name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: latController,
-                decoration: const InputDecoration(
-                  labelText: 'Latitude',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: lonController,
-                decoration: const InputDecoration(
-                  labelText: 'Longitude',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: radiusController,
-                decoration: const InputDecoration(
-                  labelText: 'Radius (meters)',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                final latitude = double.parse(latController.text);
-                final longitude = double.parse(lonController.text);
-                final radius = double.parse(radiusController.text);
-                final name = nameController.text;
-
-                // Get tenantId using the improved method
-                final tenantId = await SessionStorage.getTenantId();
-                print('Using tenantId for custom geofence: $tenantId');
-
-                final success = await _geofenceService.setupCustomGeofence(
-                  employeeId: authProvider.user?.employeeId ?? 0,
-                  tenantId: tenantId ?? 0,
-                  latitude: latitude,
-                  longitude: longitude,
-                  radius: radius,
-                  name: name,
-                );
-
-                Navigator.of(context).pop();
-
-                if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Geofence setup successful!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Failed to setup geofence'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              } catch (e) {
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Invalid input: $e'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            child: const Text('Setup'),
           ),
         ],
       ),

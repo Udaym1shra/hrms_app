@@ -72,12 +72,13 @@ class GeofenceService {
         return;
       }
 
-      // Start location stream for real-time monitoring
+      // Start location stream for real-time monitoring with more frequent updates
       _positionStreamSubscription =
           Geolocator.getPositionStream(
             locationSettings: const LocationSettings(
               accuracy: LocationAccuracy.high,
-              distanceFilter: 10, // Update every 10 meters
+              distanceFilter:
+                  5, // Update every 5 meters for better responsiveness
             ),
           ).listen(
             _onLocationUpdate,
@@ -86,13 +87,15 @@ class GeofenceService {
             },
           );
 
-      // Start periodic geofence checking
+      // Start periodic geofence checking with more frequent updates
       _locationUpdateTimer = Timer.periodic(
-        const Duration(seconds: 30), // Check every 30 seconds
+        const Duration(
+          seconds: 15,
+        ), // Check every 15 seconds for better responsiveness
         (_) => _checkGeofenceStatus(),
       );
 
-      print('✅ Location monitoring initialized');
+      print('✅ Location monitoring initialized with enhanced frequency');
     } catch (e) {
       print('❌ Error initializing location monitoring: $e');
     }
@@ -119,21 +122,41 @@ class GeofenceService {
     }
   }
 
-  // Handle location updates
+  // Handle location updates with improved consistency
   void _onLocationUpdate(Position position) {
+    print(
+      '📍 Location update: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy}m)',
+    );
+
     _lastKnownPosition = position;
     _saveLastKnownLocation(position);
+
+    // Immediately check geofence status for real-time updates
     _checkGeofenceStatus();
   }
 
-  // Check geofence status
+  // Check geofence status with improved logging and consistency
   Future<void> _checkGeofenceStatus() async {
-    if (_currentGeofence == null || _lastKnownPosition == null) return;
+    if (_currentGeofence == null || _lastKnownPosition == null) {
+      print('⚠️ Cannot check geofence status - missing data');
+      return;
+    }
 
     try {
+      print(
+        '🔍 Checking geofence status for position: ${_lastKnownPosition!.latitude}, ${_lastKnownPosition!.longitude}',
+      );
+
       final isInside = await isLocationWithinGeofence(_lastKnownPosition!);
 
+      print(
+        '📊 Geofence check result - Current status: $_isInsideGeofence, New status: $isInside',
+      );
+
       if (isInside != _isInsideGeofence) {
+        print(
+          '🔄 Geofence status changed from $_isInsideGeofence to $isInside',
+        );
         _isInsideGeofence = isInside;
         _isInsideGeofenceController.add(_isInsideGeofence);
 
@@ -145,6 +168,10 @@ class GeofenceService {
             timestamp: DateTime.now(),
           ),
         );
+
+        print('📡 Geofence event emitted: ${isInside ? "ENTER" : "EXIT"}');
+      } else {
+        print('✅ Geofence status unchanged: $isInside');
       }
     } catch (e) {
       print('❌ Error checking geofence status: $e');
@@ -171,70 +198,80 @@ class GeofenceService {
         tenantId: tenantId,
       );
 
+      print('📡 Server response: ${response.toString()}');
+
       if (response['error'] == false && response['content'] != null) {
-        final config = response['content'];
+        final content = response['content'];
 
-        // Setup geofence with server configuration
-        final success = await setupGeofence(
-          employeeId: employeeId,
-          tenantId: tenantId ?? 0,
-          latitude: config['latitude']?.toDouble() ?? 0.0,
-          longitude: config['longitude']?.toDouble() ?? 0.0,
-          radius: config['radius']?.toDouble() ?? 100.0,
-          geofenceName: config['name'] ?? 'Office Location',
-        );
+        // Handle the new API response structure
+        if (content['result'] != null && content['result']['data'] != null) {
+          final dataList = content['result']['data'] as List;
 
-        if (success) {
-          print('✅ Geofence config loaded from server successfully');
-          return true;
+          if (dataList.isNotEmpty) {
+            final geofenceData = dataList.first;
+
+            // Priority 1: Check for polygon boundary first
+            if (geofenceData['boundary'] != null &&
+                geofenceData['boundary']['type'] == 'Polygon') {
+              print('🎯 Setting up polygon geofence from server data');
+
+              // Setup polygon geofence
+              final success = await setupPolygonGeofence(
+                employeeId: employeeId,
+                tenantId: geofenceData['tenantId'] ?? tenantId ?? 0,
+                boundary: geofenceData['boundary'],
+                geofenceId: geofenceData['id'],
+                geofenceName: 'Office Location (Server)',
+              );
+
+              if (success) {
+                print(
+                  '✅ Polygon geofence config loaded from server successfully',
+                );
+                return true;
+              }
+            }
+            // Priority 2: Fallback to circle geofence only if polygon is not available
+            else if (geofenceData['lat'] != null &&
+                geofenceData['lon'] != null &&
+                geofenceData['radius'] != null) {
+              // Handle circle geofence (fallback)
+              print(
+                '🎯 Setting up circle geofence from server data (fallback)',
+              );
+
+              final success = await setupGeofence(
+                employeeId: employeeId,
+                tenantId: geofenceData['tenantId'] ?? tenantId ?? 0,
+                latitude: geofenceData['lat']?.toDouble() ?? 0.0,
+                longitude: geofenceData['lon']?.toDouble() ?? 0.0,
+                radius: geofenceData['radius']?.toDouble() ?? 100.0,
+                geofenceName: 'Office Location (Server)',
+              );
+
+              if (success) {
+                print(
+                  '✅ Circle geofence config loaded from server successfully',
+                );
+                return true;
+              }
+            } else {
+              print('⚠️ No valid geofence data found in server response');
+              print(
+                '   - Polygon boundary: ${geofenceData['boundary'] != null ? 'Present' : 'Missing'}',
+              );
+              print(
+                '   - Circle data (lat/lon/radius): ${geofenceData['lat'] != null && geofenceData['lon'] != null && geofenceData['radius'] != null ? 'Present' : 'Missing'}',
+              );
+            }
+          }
         }
       }
 
-      print('⚠️ No geofence config found on server');
+      print('⚠️ No valid geofence config found on server');
       return false;
     } catch (e) {
       print('❌ Error fetching geofence config from server: $e');
-
-      // Check if it's a 404 error (endpoint not implemented)
-      if (e.toString().contains('404')) {
-        print(
-          'ℹ️ Geofencing endpoints not implemented on server yet. Using mock data for testing.',
-        );
-        return await _setupMockGeofence(employeeId, tenantId);
-      }
-
-      return false;
-    }
-  }
-
-  // Setup mock geofence for testing when server endpoints are not available
-  Future<bool> _setupMockGeofence(int employeeId, int? tenantId) async {
-    try {
-      print('🎯 Setting up mock geofence for testing...');
-
-      // Use a default office location (you can change these coordinates)
-      const mockLatitude = 12.9716; // Bangalore coordinates
-      const mockLongitude = 77.5946;
-      const mockRadius = 100.0; // 100 meters
-      const mockName = 'Office Location (Mock)';
-
-      final success = await setupGeofence(
-        employeeId: employeeId,
-        tenantId: tenantId ?? 0,
-        latitude: mockLatitude,
-        longitude: mockLongitude,
-        radius: mockRadius,
-        geofenceName: mockName,
-      );
-
-      if (success) {
-        print('✅ Mock geofence setup successful for testing');
-        return true;
-      }
-
-      return false;
-    } catch (e) {
-      print('❌ Error setting up mock geofence: $e');
       return false;
     }
   }
@@ -260,6 +297,7 @@ class GeofenceService {
         'radius': radius,
         'name': geofenceName ?? 'Office Location',
         'regionId': 'employee_${employeeId}_tenant_${tenantId}',
+        'type': 'circle',
       };
 
       await _saveGeofenceData();
@@ -272,6 +310,55 @@ class GeofenceService {
     }
   }
 
+  // Set up polygon geofence for an employee
+  Future<bool> setupPolygonGeofence({
+    required int employeeId,
+    required int tenantId,
+    required Map<String, dynamic> boundary,
+    int? geofenceId,
+    String? geofenceName,
+  }) async {
+    try {
+      print('🎯 Setting up polygon geofence for employee: $employeeId');
+
+      // Calculate center point from polygon coordinates for display purposes
+      final coordinates = boundary['coordinates'][0] as List<dynamic>;
+      double totalLat = 0;
+      double totalLon = 0;
+
+      for (var coord in coordinates) {
+        totalLon += coord[0] as double; // longitude
+        totalLat += coord[1] as double; // latitude
+      }
+
+      final centerLat = totalLat / coordinates.length;
+      final centerLon = totalLon / coordinates.length;
+
+      // Save geofence data with polygon boundary
+      _currentGeofence = {
+        'employeeId': employeeId,
+        'tenantId': tenantId,
+        'geofenceId': geofenceId,
+        'boundary': boundary,
+        'centerLatitude': centerLat,
+        'centerLongitude': centerLon,
+        'name': geofenceName ?? 'Office Location (Polygon)',
+        'regionId': 'employee_${employeeId}_tenant_${tenantId}',
+        'type': 'polygon',
+      };
+
+      await _saveGeofenceData();
+
+      print('✅ Polygon geofence setup successful');
+      print('📍 Center point: $centerLat, $centerLon');
+      print('🔢 Polygon points: ${coordinates.length}');
+      return true;
+    } catch (e) {
+      print('❌ Error setting up polygon geofence: $e');
+      return false;
+    }
+  }
+
   // Check if current location is within geofence - optimized version
   Future<bool> isLocationWithinGeofence(Position position) async {
     if (_currentGeofence == null) {
@@ -279,13 +366,21 @@ class GeofenceService {
     }
 
     try {
-      // Check if it's a polygon boundary
+      // Priority 1: Check for polygon boundary first
       if (_currentGeofence!['boundary'] != null &&
           _currentGeofence!['boundary']['type'] == 'Polygon') {
+        print('🔍 Using polygon geofence validation');
         return _isPointInPolygonOptimized(position);
-      } else {
-        // Circle geofence - more efficient calculation
+      }
+      // Priority 2: Fallback to circle geofence only if polygon is not available
+      else if (_currentGeofence!['latitude'] != null &&
+          _currentGeofence!['longitude'] != null &&
+          _currentGeofence!['radius'] != null) {
+        print('🔍 Using circle geofence validation (fallback)');
         return _isPointInCircle(position);
+      } else {
+        print('⚠️ No valid geofence configuration found');
+        return false;
       }
     } catch (e) {
       print('❌ Error checking geofence: $e');
@@ -315,32 +410,48 @@ class GeofenceService {
     final coordinates =
         _currentGeofence!['boundary']['coordinates'][0] as List<dynamic>;
 
-    // Convert to optimized format once
+    // Convert to optimized format once - Fix coordinate mapping
     final polygonPoints = coordinates.map<List<double>>((coord) {
       final coordList = coord as List<dynamic>;
       return [coordList[0].toDouble(), coordList[1].toDouble()]; // [lon, lat]
     }).toList();
 
-    return _isPointInPolygon(
+    print(
+      '🔍 Checking point (${position.latitude}, ${position.longitude}) against polygon with ${polygonPoints.length} points',
+    );
+    print(
+      '📍 Polygon points: ${polygonPoints.take(3).map((p) => '(${p[0]}, ${p[1]})').join(', ')}...',
+    );
+
+    final result = _isPointInPolygon(
       position.latitude,
       position.longitude,
       polygonPoints,
     );
+
+    print('✅ Polygon validation result: $result');
+    return result;
   }
 
-  // Optimized ray casting algorithm
+  // Fixed ray casting algorithm with proper coordinate handling
   bool _isPointInPolygon(double lat, double lon, List<List<double>> polygon) {
+    if (polygon.length < 3) {
+      print('⚠️ Polygon has less than 3 points, cannot validate');
+      return false;
+    }
+
     bool inside = false;
     int j = polygon.length - 1;
 
     for (int i = 0; i < polygon.length; i++) {
-      final xi = polygon[i][1]; // latitude
-      final yi = polygon[i][0]; // longitude
-      final xj = polygon[j][1]; // latitude
-      final yj = polygon[j][0]; // longitude
+      final xi = polygon[i][0]; // longitude
+      final yi = polygon[i][1]; // latitude
+      final xj = polygon[j][0]; // longitude
+      final yj = polygon[j][1]; // latitude
 
-      if (((yi > lon) != (yj > lon)) &&
-          (lat < (xj - xi) * (lon - yi) / (yj - yi) + xi)) {
+      // Ray casting algorithm with proper coordinate handling
+      if (((yi > lat) != (yj > lat)) &&
+          (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
         inside = !inside;
       }
       j = i;
@@ -349,7 +460,7 @@ class GeofenceService {
     return inside;
   }
 
-  // Validate geofence for punch operation
+  // Validate geofence for punch operation with improved consistency
   Future<Map<String, dynamic>> validateGeofenceForPunch(
     Position? position,
   ) async {
@@ -366,6 +477,7 @@ class GeofenceService {
       }
 
       if (_currentGeofence == null) {
+        print('ℹ️ No geofence configured. Punch allowed without validation.');
         return {
           'isValid': true,
           'message': 'No geofence configured. Punch allowed.',
@@ -373,8 +485,23 @@ class GeofenceService {
         };
       }
 
+      print('📍 Current position: ${position.latitude}, ${position.longitude}');
+      print('🎯 Geofence type: ${getCurrentGeofenceType()}');
+
+      // Use the same validation logic as real-time monitoring
       final isWithin = await isLocationWithinGeofence(position);
       final distance = await _calculateDistanceToGeofence(position);
+
+      print('🔍 Validation result - Inside: $isWithin, Distance: $distance');
+
+      // Update the internal status to match validation result for consistency
+      if (isWithin != _isInsideGeofence) {
+        print(
+          '🔄 Updating internal geofence status from $_isInsideGeofence to $isWithin',
+        );
+        _isInsideGeofence = isWithin;
+        _isInsideGeofenceController.add(_isInsideGeofence);
+      }
 
       if (isWithin) {
         return {
@@ -423,8 +550,58 @@ class GeofenceService {
     return _currentGeofence;
   }
 
+  // Get current geofence type for debugging
+  String getCurrentGeofenceType() {
+    if (_currentGeofence == null) return 'None';
+
+    if (_currentGeofence!['boundary'] != null &&
+        _currentGeofence!['boundary']['type'] == 'Polygon') {
+      return 'Polygon';
+    } else if (_currentGeofence!['latitude'] != null &&
+        _currentGeofence!['longitude'] != null &&
+        _currentGeofence!['radius'] != null) {
+      return 'Circle';
+    } else {
+      return 'Unknown';
+    }
+  }
+
+  // Check if geofencing is enabled/configured
+  bool get isGeofencingEnabled => _currentGeofence != null;
+
   // Check if currently inside geofence
   bool get isInsideGeofenceStatus => _isInsideGeofence;
+
+  // Force refresh geofence status with current location
+  Future<void> refreshGeofenceStatus(Position position) async {
+    if (_currentGeofence == null) return;
+
+    try {
+      final isInside = await isLocationWithinGeofence(position);
+
+      if (isInside != _isInsideGeofence) {
+        _isInsideGeofence = isInside;
+        _isInsideGeofenceController.add(_isInsideGeofence);
+
+        // Emit geofence event
+        _geofenceEventController.add(
+          GeofenceEvent(
+            regionId: _currentGeofence!['regionId'] ?? 'default',
+            type: isInside ? GeofenceEventType.enter : GeofenceEventType.exit,
+            timestamp: DateTime.now(),
+          ),
+        );
+      }
+
+      // Update last known position
+      _lastKnownPosition = position;
+      await _saveLastKnownLocation(position);
+
+      print('✅ Geofence status refreshed: ${isInside ? "Inside" : "Outside"}');
+    } catch (e) {
+      print('❌ Error refreshing geofence status: $e');
+    }
+  }
 
   // Check if geofencing is supported on this device
   Future<bool> isGeofencingSupported() async {
@@ -593,14 +770,13 @@ class GeofenceService {
       return;
     }
 
-    final geofence = _currentGeofence!;
+    String statusText =
+        'Status: ${_isInsideGeofence ? 'Inside Office Area' : 'Outside Office Area'}';
+
     _showDialog(
       context,
       'Geofence Status',
-      'Location: ${geofence['name']}\n'
-          'Center: ${geofence['latitude'].toStringAsFixed(6)}, ${geofence['longitude'].toStringAsFixed(6)}\n'
-          'Radius: ${geofence['radius']}m\n'
-          'Status: ${_isInsideGeofence ? 'Inside' : 'Outside'}',
+      statusText,
       _isInsideGeofence ? Icons.location_on : Icons.location_off,
       _isInsideGeofence ? AppTheme.successColor : AppTheme.warningColor,
     );
@@ -633,6 +809,33 @@ class GeofenceService {
         ],
       ),
     );
+  }
+
+  // Debug method to log current geofence state
+  void debugGeofenceState() {
+    print('🔍 === GEOFENCE DEBUG STATE ===');
+    print(
+      '📍 Current geofence: ${_currentGeofence != null ? "Configured" : "Not configured"}',
+    );
+    print('📍 Inside geofence: $_isInsideGeofence');
+    print(
+      '📍 Last known position: ${_lastKnownPosition?.latitude}, ${_lastKnownPosition?.longitude}',
+    );
+    print('📍 Geofence type: ${getCurrentGeofenceType()}');
+
+    if (_currentGeofence != null) {
+      if (_currentGeofence!['boundary'] != null) {
+        print(
+          '📍 Polygon coordinates: ${_currentGeofence!['boundary']['coordinates'][0].length} points',
+        );
+      } else {
+        print(
+          '📍 Circle center: ${_currentGeofence!['latitude']}, ${_currentGeofence!['longitude']}',
+        );
+        print('📍 Circle radius: ${_currentGeofence!['radius']} meters');
+      }
+    }
+    print('🔍 === END DEBUG STATE ===');
   }
 
   // Dispose resources properly

@@ -47,6 +47,25 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
     // Refresh attendance when widget dependencies change (e.g., on reload)
     if (_employeeId != null && _tenantId != null) {
       _fetchTodayAttendance();
+      // Also refresh geofence status when dependencies change
+      _refreshGeofenceStatus();
+    }
+  }
+
+  // Method to refresh geofence status
+  Future<void> _refreshGeofenceStatus() async {
+    try {
+      if (_currentPosition != null) {
+        print('🔄 Refreshing geofence status...');
+        await _geofenceService.refreshGeofenceStatus(_currentPosition!);
+        if (mounted) {
+          setState(() {
+            _isInsideGeofence = _geofenceService.isInsideGeofenceStatus;
+          });
+        }
+      }
+    } catch (e) {
+      print('❌ Error refreshing geofence status: $e');
     }
   }
 
@@ -56,6 +75,16 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
       _geofenceService.setApiService(widget.apiService);
 
       await _geofenceService.initialize();
+
+      // Listen to geofence status changes for real-time UI updates
+      _geofenceService.isInsideGeofence.listen((isInside) {
+        if (mounted) {
+          print('🔄 Geofence status update received: $isInside');
+          setState(() {
+            _isInsideGeofence = isInside;
+          });
+        }
+      });
 
       // Listen to geofence events
       _geofenceService.geofenceEvents.listen((event) {
@@ -1149,24 +1178,67 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
     );
   }
 
-  // Geofencing validation method
+  // Geofencing validation method with improved location refresh
   Future<Map<String, dynamic>> _validateGeofenceForPunch() async {
     try {
       print("🔍 Validating geofence for punch operation...");
 
-      // Use the geofence service for validation
-      final validation = await _geofenceService.validateGeofenceForPunch(
-        _currentPosition,
-      );
-
-      // Update last known location if we have a position
-      if (_currentPosition != null) {
-        await _geofenceService.updateLastKnownLocation(_currentPosition!);
+      // Check if geofence is configured
+      if (_geofenceService.getCurrentGeofence() == null) {
+        print("ℹ️ No geofence configured. Punch allowed without validation.");
+        return {
+          'isValid': true,
+          'message': 'No geofence configured. Punch allowed.',
+          'distance': null,
+        };
       }
 
+      // Get fresh location data for validation
+      Position? currentPosition = _currentPosition;
+      if (currentPosition == null) {
+        print("📍 Getting fresh location for validation...");
+        try {
+          currentPosition = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+          );
+          setState(() {
+            _currentPosition = currentPosition;
+          });
+        } catch (e) {
+          print("❌ Error getting current position: $e");
+          return {
+            'isValid': false,
+            'message':
+                'Unable to get your current location. Please enable location services and try again.',
+            'distance': null,
+          };
+        }
+      }
+
+      print(
+        '📍 Current position: ${currentPosition.latitude}, ${currentPosition.longitude}',
+      );
+      print('🎯 Geofence type: ${_geofenceService.getCurrentGeofenceType()}');
+
+      // Debug geofence state
+      _geofenceService.debugGeofenceState();
+
+      // Use the geofence service for validation
+      final validation = await _geofenceService.validateGeofenceForPunch(
+        currentPosition,
+      );
+
+      // Update UI state to reflect the refreshed status
+      if (mounted) {
+        setState(() {
+          _isInsideGeofence = _geofenceService.isInsideGeofenceStatus;
+        });
+      }
+
+      print("✅ Geofence validation completed: ${validation['isValid']}");
       return validation;
     } catch (error) {
-      print("Error validating geofence: $error");
+      print("❌ Error validating geofence: $error");
       return {
         'isValid': true,
         'message': 'Unable to validate geofence. Punch allowed.',
@@ -1194,7 +1266,6 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
   @override
   void dispose() {
     _durationTimer?.cancel();
-    _geofenceService.dispose();
     super.dispose();
   }
 }

@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart' as latlong;
 import 'package:geolocator/geolocator.dart' as geolocator;
 import '../utils/app_theme.dart';
 import '../services/api_service.dart';
+import '../services/geofence_service.dart';
 import '../../utils/session_storage.dart';
 
 class GeofenceMapWidget extends StatefulWidget {
@@ -42,12 +43,34 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
     _mapController = MapController();
     _loadGeofenceConfig();
     _getCurrentLocation();
+
+    // Listen to GeofenceService for real-time updates
+    _listenToGeofenceService();
+  }
+
+  // Listen to GeofenceService for consistent status updates
+  void _listenToGeofenceService() {
+    final geofenceService = GeofenceService();
+
+    // Listen to geofence status changes
+    geofenceService.isInsideGeofence.listen((isInside) {
+      if (mounted) {
+        print('🔄 GeofenceMapWidget received status update: $isInside');
+        _safeSetState(() {
+          _isInsideGeofence = isInside;
+          _updateMapDisplay();
+        });
+      }
+    });
   }
 
   @override
-  void dispose() {
-    _isDisposed = true;
-    super.dispose();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh geofence status when dependencies change
+    if (_currentPosition != null) {
+      _checkGeofenceStatus();
+    }
   }
 
   // Helper method to safely call setState
@@ -131,16 +154,14 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
     final userLat = _currentPosition!.latitude;
     final userLon = _currentPosition!.longitude;
 
+    print('🔍 GeofenceMapWidget checking status for: $userLat, $userLon');
+
     bool isInside = false;
 
     // Check if it's a polygon boundary
     if (_geofenceConfig!['boundary'] != null &&
         _geofenceConfig!['boundary']['type'] == 'Polygon') {
-      print('🔍 Checking polygon geofence with coordinates:');
-      print('User position: Lat: $userLat, Lon: $userLon');
-      print(
-        'Polygon coordinates: ${_geofenceConfig!['boundary']['coordinates'][0]}',
-      );
+      print('🔍 Using GeofenceService for polygon validation');
 
       // Convert dynamic coordinates to List<List<double>>
       final coordinates =
@@ -150,8 +171,8 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
         return [coordList[0].toDouble(), coordList[1].toDouble()]; // [lon, lat]
       }).toList();
 
-      isInside = _isPointInPolygon(userLat, userLon, polygonCoords);
-
+      // Use the same algorithm as GeofenceService
+      isInside = _isPointInPolygonConsistent(userLat, userLon, polygonCoords);
       print('🔍 Polygon geofence result: $isInside');
     } else {
       // Fallback to circle geofence
@@ -167,6 +188,9 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
           geofenceLon,
         );
         isInside = distance <= radius;
+        print(
+          '🔍 Circle geofence result: $isInside (distance: $distance, radius: $radius)',
+        );
       }
     }
 
@@ -176,25 +200,35 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
     });
   }
 
-  // Check if a point is inside a polygon using ray casting algorithm
-  bool _isPointInPolygon(double lat, double lon, List<List<double>> polygon) {
-    int intersections = 0;
-    int n = polygon.length;
-
-    for (int i = 0; i < n; i++) {
-      double x1 = polygon[i][1]; // latitude (second element)
-      double y1 = polygon[i][0]; // longitude (first element)
-      double x2 = polygon[(i + 1) % n][1]; // latitude (second element)
-      double y2 = polygon[(i + 1) % n][0]; // longitude (first element)
-
-      // Check if the ray from the point intersects with the edge
-      if (((x1 > lat) != (x2 > lat)) &&
-          (lon < (y2 - y1) * (lat - x1) / (x2 - x1) + y1)) {
-        intersections++;
-      }
+  // Consistent polygon validation algorithm matching GeofenceService
+  bool _isPointInPolygonConsistent(
+    double lat,
+    double lon,
+    List<List<double>> polygon,
+  ) {
+    if (polygon.length < 3) {
+      print('⚠️ Polygon has less than 3 points, cannot validate');
+      return false;
     }
 
-    return intersections % 2 == 1;
+    bool inside = false;
+    int j = polygon.length - 1;
+
+    for (int i = 0; i < polygon.length; i++) {
+      final xi = polygon[i][0]; // longitude
+      final yi = polygon[i][1]; // latitude
+      final xj = polygon[j][0]; // longitude
+      final yj = polygon[j][1]; // latitude
+
+      // Ray casting algorithm with proper coordinate handling (same as GeofenceService)
+      if (((yi > lat) != (yj > lat)) &&
+          (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+      j = i;
+    }
+
+    return inside;
   }
 
   // Update map display with geofence and current location
@@ -490,25 +524,23 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                             userAgentPackageName: 'com.example.testingapp',
                           ),
 
-                          // Polygon layer for geofence with improved colors
+                          // Polygon layer for geofence with green boundary
                           if (_polygonPoints.isNotEmpty)
                             PolygonLayer(
                               polygons: [
                                 Polygon(
                                   points: _polygonPoints,
-                                  color: AppTheme.getGeofenceStatusColor(
-                                    _isInsideGeofence,
-                                  ).withOpacity(0.2),
-                                  borderColor: AppTheme.getGeofenceStatusColor(
-                                    _isInsideGeofence,
-                                  ),
+                                  color: Colors.green.withOpacity(
+                                    0.2,
+                                  ), // Light green fill
+                                  borderColor: Colors.green, // Green boundary
                                   borderStrokeWidth: 3.0,
                                   isFilled: true,
                                 ),
                               ],
                             ),
 
-                          // Circle layer for circular geofence with improved colors
+                          // Circle layer for circular geofence with green boundary
                           if (_polygonPoints.isEmpty && _geofenceConfig != null)
                             CircleLayer(
                               circles: [
@@ -517,13 +549,11 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                                   radius:
                                       _geofenceConfig!['radius']?.toDouble() ??
                                       100,
-                                  color: AppTheme.getGeofenceStatusColor(
-                                    _isInsideGeofence,
-                                  ).withOpacity(0.2),
+                                  color: Colors.green.withOpacity(
+                                    0.2,
+                                  ), // Light green fill
                                   borderStrokeWidth: 3,
-                                  borderColor: AppTheme.getGeofenceStatusColor(
-                                    _isInsideGeofence,
-                                  ),
+                                  borderColor: Colors.green, // Green boundary
                                 ),
                               ],
                             ),
@@ -568,83 +598,6 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
 
               const SizedBox(height: 16),
 
-              // Geofence Info
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.backgroundColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Geofence Configuration',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Check if it's a polygon or circle
-                    if (_geofenceConfig!['boundary'] != null &&
-                        _geofenceConfig!['boundary']['type'] == 'Polygon') ...[
-                      _buildInfoRow('Type', 'Polygon'),
-                      _buildInfoRow(
-                        'Vertices',
-                        '${_geofenceConfig!['boundary']['coordinates'][0].length} points',
-                      ),
-                      _buildInfoRow('Area', 'Custom Polygon'),
-
-                      // Show polygon coordinates
-                      const SizedBox(height: 8),
-                      Text(
-                        'Polygon Coordinates:',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.backgroundColor.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          children: _geofenceConfig!['boundary']['coordinates'][0]
-                              .map<Widget>(
-                                (coord) => Text(
-                                  'Lon: ${coord[0].toStringAsFixed(6)}, Lat: ${coord[1].toStringAsFixed(6)}',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: AppTheme.textSecondary,
-                                        fontFamily: 'monospace',
-                                      ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ),
-                    ] else ...[
-                      _buildInfoRow(
-                        'Center',
-                        '${_geofenceConfig!['lat']?.toStringAsFixed(4) ?? 'N/A'}, ${_geofenceConfig!['lon']?.toStringAsFixed(4) ?? 'N/A'}',
-                      ),
-                      _buildInfoRow(
-                        'Radius',
-                        '${_geofenceConfig!['radius']?.toString() ?? 'N/A'} meters',
-                      ),
-                      _buildInfoRow('Type', 'Circle'),
-                    ],
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
               // Refresh Button
               SizedBox(
                 width: double.infinity,
@@ -674,35 +627,6 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
-            ),
-          ),
-        ],
       ),
     );
   }

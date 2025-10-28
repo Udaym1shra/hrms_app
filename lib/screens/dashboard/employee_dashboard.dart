@@ -168,6 +168,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       selectedIndex: _selectedIndex,
                       onItemSelected: _onSidebarItemSelected,
                       onLogout: _handleLogout,
+                      onClose: () {
+                        setState(() {
+                          _isSidebarOpen = false;
+                        });
+                      },
                     ),
 
                   // Main Content
@@ -207,73 +212,152 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
   Widget _buildAppBar(BuildContext context, AuthProvider authProvider) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+            spreadRadius: 0,
+          ),
         ],
       ),
       child: Row(
         children: [
-          // Menu Button
-          IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () {
-              setState(() {
-                _isSidebarOpen = !_isSidebarOpen;
-              });
-            },
+          // Menu Button with improved design
+          Container(
+            decoration: BoxDecoration(
+              color: AppTheme.backgroundColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.menu, color: AppTheme.primaryColor),
+              onPressed: () {
+                setState(() {
+                  _isSidebarOpen = !_isSidebarOpen;
+                });
+              },
+            ),
           ),
 
           const SizedBox(width: 16),
 
-          // Title
+          // Title with icon
           Expanded(
-            child: Text(
-              _getPageTitle(),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
-              ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.primaryColor,
+                        AppTheme.primaryColor.withOpacity(0.8),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.dashboard_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  _getPageTitle(),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
             ),
           ),
 
-          // User Info
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: AppTheme.primaryColor,
-                child: Text(
-                  authProvider.user?.firstName.substring(0, 1).toUpperCase() ??
-                      'U',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+          // User Info with enhanced design
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.backgroundColor,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppTheme.primaryColor.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.primaryColor,
+                        AppTheme.primaryColor.withOpacity(0.8),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.transparent,
+                    child: Text(
+                      authProvider.user?.firstName
+                              .substring(0, 1)
+                              .toUpperCase() ??
+                          'U',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    authProvider.user?.fullName ?? 'User',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      authProvider.user?.fullName ?? 'User',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                      ),
                     ),
-                  ),
-                  Text(
-                    authProvider.user?.role?.name ?? 'Employee',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppTheme.textSecondary,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        authProvider.user?.role?.name ?? 'Employee',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 10,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -402,7 +486,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           child: _buildStatCard(
             'Total Days',
             '30',
-            Icons.calendar_today,
+            Icons.calendar_today_rounded,
             AppTheme.primaryColor,
           ),
         ),
@@ -411,7 +495,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           child: _buildStatCard(
             'Present',
             '28',
-            Icons.check_circle,
+            Icons.check_circle_rounded,
             AppTheme.successColor,
           ),
         ),
@@ -420,7 +504,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           child: _buildStatCard(
             'Leaves',
             '2',
-            Icons.event_busy,
+            Icons.event_busy_rounded,
             AppTheme.warningColor,
           ),
         ),
@@ -435,26 +519,48 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     Color color,
   ) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: color,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [color.withOpacity(0.05), color.withOpacity(0.02)],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 28),
               ),
-            ),
-            Text(
-              title,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppTheme.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -570,106 +676,136 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
     switch (status.toLowerCase()) {
       case 'present':
-        statusColor = Colors.green;
-        statusIcon = Icons.check_circle;
+        statusColor = AppTheme.successColor;
+        statusIcon = Icons.check_circle_rounded;
         break;
       case 'absent':
-        statusColor = Colors.red;
-        statusIcon = Icons.cancel;
+        statusColor = AppTheme.errorColor;
+        statusIcon = Icons.cancel_rounded;
         break;
       case 'late':
-        statusColor = Colors.orange;
-        statusIcon = Icons.schedule;
+        statusColor = AppTheme.warningColor;
+        statusIcon = Icons.schedule_rounded;
         break;
       default:
-        statusColor = Colors.grey;
-        statusIcon = Icons.help_outline;
+        statusColor = AppTheme.textSecondary;
+        statusIcon = Icons.help_outline_rounded;
     }
 
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(statusIcon, color: statusColor, size: 32),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Attendance Status',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary,
-                            ),
-                      ),
-                      Text(
-                        'Date: $attendanceDate',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.textSecondary,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [statusColor.withOpacity(0.05), Colors.white],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(statusIcon, color: statusColor, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Attendance Status',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.textPrimary,
+                              ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: statusColor.withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    status.toUpperCase(),
-                    style: TextStyle(
-                      color: statusColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                        const SizedBox(height: 4),
+                        Text(
+                          'Date: $attendanceDate',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppTheme.textSecondary),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatItem(
-                    'Production Hours',
-                    '${productionHour.toStringAsFixed(1)} hrs',
-                    Icons.access_time,
-                    AppTheme.primaryColor,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: statusColor.withOpacity(0.3),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Text(
+                      status.toUpperCase(),
+                      style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.backgroundColor,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                Expanded(
-                  child: _buildStatItem(
-                    'Early Coming',
-                    '${attendanceData['earlyComingMinutes'] ?? 0} min',
-                    Icons.schedule,
-                    Colors.green,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _buildStatItem(
+                        'Production Hours',
+                        '${productionHour.toStringAsFixed(1)} hrs',
+                        Icons.access_time_rounded,
+                        AppTheme.primaryColor,
+                      ),
+                    ),
+                    Container(width: 1, height: 40, color: Colors.grey[300]),
+                    Expanded(
+                      child: _buildStatItem(
+                        'Early Coming',
+                        '${attendanceData['earlyComingMinutes'] ?? 0} min',
+                        Icons.trending_up_rounded,
+                        AppTheme.successColor,
+                      ),
+                    ),
+                    Container(width: 1, height: 40, color: Colors.grey[300]),
+                    Expanded(
+                      child: _buildStatItem(
+                        'Late Coming',
+                        '${attendanceData['lateComingMinutes'] ?? 0} min',
+                        Icons.trending_down_rounded,
+                        AppTheme.warningColor,
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: _buildStatItem(
-                    'Late Coming',
-                    '${attendanceData['lateComingMinutes'] ?? 0} min',
-                    Icons.schedule,
-                    Colors.orange,
-                  ),
-                ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -684,21 +820,26 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   ) {
     return Column(
       children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
+        Icon(icon, color: color, size: 22),
+        const SizedBox(height: 6),
         Text(
           value,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: color,
+            fontSize: 14,
           ),
         ),
+        const SizedBox(height: 2),
         Text(
           label,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: AppTheme.textSecondary,
+            fontSize: 10,
+          ),
           textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
@@ -713,57 +854,114 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
     // Determine next action
     final nextAction = lastPunchType == 'PunchIn' ? 'PunchOut' : 'PunchIn';
-    final buttonColor = nextAction == 'PunchIn' ? Colors.green : Colors.red;
-    final buttonIcon = nextAction == 'PunchIn' ? Icons.login : Icons.logout;
+    final buttonColor = nextAction == 'PunchIn'
+        ? AppTheme.successColor
+        : AppTheme.errorColor;
+    final buttonIcon = nextAction == 'PunchIn'
+        ? Icons.login_rounded
+        : Icons.logout_rounded;
 
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Text(
-              'Quick Action',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [buttonColor.withOpacity(0.1), Colors.white],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: buttonColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.flash_on_rounded,
+                      color: buttonColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Quick Action',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 60,
-              child: ElevatedButton.icon(
-                onPressed: () => _handlePunchAction(nextAction, attendanceData),
-                icon: Icon(buttonIcon, size: 24),
-                label: Text(
-                  nextAction,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: () =>
+                      _handlePunchAction(nextAction, attendanceData),
+                  icon: Icon(buttonIcon, size: 24),
+                  label: Text(
+                    nextAction,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: buttonColor,
+                    foregroundColor: Colors.white,
+                    elevation: 3,
+                    shadowColor: buttonColor.withOpacity(0.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: buttonColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              ),
+              if (lastLog != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.backgroundColor,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.history_rounded,
+                        size: 14,
+                        color: AppTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Last: ${lastPunchType} at ${lastLog['date']}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ),
-            if (lastLog != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Last Action: ${lastPunchType} at ${lastLog['date']}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
-                textAlign: TextAlign.center,
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -839,63 +1037,124 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     final lateDepartureMinutes = attendanceData['lateDepartureMinutes'] ?? 0;
 
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Attendance Details',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppTheme.primaryColor.withOpacity(0.05), Colors.white],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.info_outline_rounded,
+                      color: AppTheme.primaryColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Attendance Details',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 16),
-            _buildDetailRow('Punch In Time', punchInTime ?? 'Not Available'),
-            _buildDetailRow('Punch Out Time', punchOutTime ?? 'Not Available'),
-            _buildDetailRow(
-              'Early Departure',
-              '$earlyDepartureMinutes minutes',
-            ),
-            _buildDetailRow('Late Departure', '$lateDepartureMinutes minutes'),
-            if (attendanceData['remark'] != null)
-              _buildDetailRow('Remark', attendanceData['remark']),
-          ],
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.backgroundColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    _buildDetailRow(
+                      'Punch In Time',
+                      punchInTime ?? 'Not Available',
+                      Icons.login_rounded,
+                    ),
+                    const Divider(height: 24),
+                    _buildDetailRow(
+                      'Punch Out Time',
+                      punchOutTime ?? 'Not Available',
+                      Icons.logout_rounded,
+                    ),
+                    const Divider(height: 24),
+                    _buildDetailRow(
+                      'Early Departure',
+                      '$earlyDepartureMinutes minutes',
+                      Icons.trending_up_rounded,
+                    ),
+                    const Divider(height: 24),
+                    _buildDetailRow(
+                      'Late Departure',
+                      '$lateDepartureMinutes minutes',
+                      Icons.trending_down_rounded,
+                    ),
+                    if (attendanceData['remark'] != null) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow(
+                        'Remark',
+                        attendanceData['remark'],
+                        Icons.note_rounded,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   // Build detail row widget
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
+  Widget _buildDetailRow(String label, String value, IconData icon) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: AppTheme.textSecondary),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 2,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
-            ),
+        ),
+        Expanded(
+          flex: 3,
+          child: Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
+            textAlign: TextAlign.right,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -906,55 +1165,111 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
     if (attendanceLogs.isEmpty) {
       return Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Center(
-            child: Text(
-              'No attendance logs available',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          padding: const EdgeInsets.all(40),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppTheme.backgroundColor, Colors.white],
             ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                Icons.history_rounded,
+                size: 48,
+                color: AppTheme.textSecondary.withOpacity(0.5),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'No attendance logs available',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
+              ),
+            ],
           ),
         ),
       );
     }
 
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Attendance Logs',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppTheme.primaryColor.withOpacity(0.05), Colors.white],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.history_rounded,
+                      color: AppTheme.primaryColor,
+                      size: 20,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  '${attendanceLogs.length} entries',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppTheme.textSecondary,
+                  const SizedBox(width: 12),
+                  Text(
+                    'Attendance Logs',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimary,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ...attendanceLogs.asMap().entries.map((entry) {
-              final index = entry.key;
-              final log = entry.value;
-              return _buildLogItem(log, index + 1);
-            }).toList(),
-          ],
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${attendanceLogs.length} entries',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.primaryColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ...attendanceLogs.asMap().entries.map((entry) {
+                final index = entry.key;
+                final log = entry.value;
+                return Padding(
+                  padding: EdgeInsets.only(
+                    bottom: index < attendanceLogs.length - 1 ? 12 : 0,
+                  ),
+                  child: _buildLogItem(log, index + 1),
+                );
+              }).toList(),
+            ],
+          ),
         ),
       ),
     );
@@ -968,64 +1283,129 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     final lat = log['lat'] ?? 'N/A';
     final lon = log['lon'] ?? 'N/A';
 
-    final punchColor = punchType == 'PunchIn' ? Colors.green : Colors.red;
-    final punchIcon = punchType == 'PunchIn' ? Icons.login : Icons.logout;
+    final punchColor = punchType == 'PunchIn'
+        ? AppTheme.successColor
+        : AppTheme.errorColor;
+    final punchIcon = punchType == 'PunchIn'
+        ? Icons.login_rounded
+        : Icons.logout_rounded;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.backgroundColor.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: punchColor.withOpacity(0.3)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: punchColor.withOpacity(0.2), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: punchColor.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: punchColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  punchColor.withOpacity(0.2),
+                  punchColor.withOpacity(0.1),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(punchIcon, color: punchColor, size: 16),
+            child: Icon(punchIcon, color: punchColor, size: 20),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Text(
-                      '#$index $punchType',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: punchColor,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: punchColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '#$index $punchType',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: punchColor,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                     const Spacer(),
-                    Text(
-                      recordType,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.textSecondary,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.backgroundColor,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        recordType,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.textSecondary,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  date,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppTheme.textSecondary,
-                  ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.access_time_rounded,
+                      size: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      date,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  'Location: $lat, $lon',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppTheme.textSecondary,
-                    fontFamily: 'monospace',
-                  ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.location_on_rounded,
+                      size: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        '$lat, $lon',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.textSecondary,
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1041,7 +1421,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
   Widget _buildProfileContent(EmployeeProvider employeeProvider) {
     if (employeeProvider.employee == null) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+        ),
+      );
     }
 
     return SingleChildScrollView(
@@ -1050,41 +1434,114 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Personal Information',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppTheme.primaryColor.withOpacity(0.05),
+                    Colors.white,
+                  ],
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppTheme.primaryColor,
+                                AppTheme.primaryColor.withOpacity(0.8),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.person_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Personal Information',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.textPrimary,
+                              ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildInfoRow('Name', employeeProvider.employee!.fullName),
-                  _buildInfoRow(
-                    'Employee Code',
-                    employeeProvider.employee!.empCode,
-                  ),
-                  _buildInfoRow('Email', employeeProvider.employee!.email),
-                  _buildInfoRow(
-                    'Mobile',
-                    employeeProvider.employee!.mobile ?? 'N/A',
-                  ),
-                  _buildInfoRow(
-                    'Department',
-                    employeeProvider.employee!.departmentModel?.name ?? 'N/A',
-                  ),
-                  _buildInfoRow(
-                    'Designation',
-                    employeeProvider.employee!.designationModel?.name ?? 'N/A',
-                  ),
-                  _buildInfoRow(
-                    'Join Date',
-                    employeeProvider.employee!.joinDate ?? 'N/A',
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.backgroundColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildInfoRow(
+                            'Name',
+                            employeeProvider.employee!.fullName,
+                            Icons.person_outline_rounded,
+                          ),
+                          const Divider(height: 24),
+                          _buildInfoRow(
+                            'Employee Code',
+                            employeeProvider.employee!.empCode,
+                            Icons.badge_outlined,
+                          ),
+                          const Divider(height: 24),
+                          _buildInfoRow(
+                            'Email',
+                            employeeProvider.employee!.email,
+                            Icons.email_outlined,
+                          ),
+                          const Divider(height: 24),
+                          _buildInfoRow(
+                            'Mobile',
+                            employeeProvider.employee!.mobile ?? 'N/A',
+                            Icons.phone_outlined,
+                          ),
+                          const Divider(height: 24),
+                          _buildInfoRow(
+                            'Department',
+                            employeeProvider.employee!.departmentModel?.name ??
+                                'N/A',
+                            Icons.business_outlined,
+                          ),
+                          const Divider(height: 24),
+                          _buildInfoRow(
+                            'Designation',
+                            employeeProvider.employee!.designationModel?.name ??
+                                'N/A',
+                            Icons.work_outline_rounded,
+                          ),
+                          const Divider(height: 24),
+                          _buildInfoRow(
+                            'Join Date',
+                            employeeProvider.employee!.joinDate ?? 'N/A',
+                            Icons.calendar_today_outlined,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1093,32 +1550,33 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w500,
-                color: AppTheme.textSecondary,
-              ),
+  Widget _buildInfoRow(String label, String value, IconData icon) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: AppTheme.textSecondary),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 2,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppTheme.textPrimary),
-            ),
+        ),
+        Expanded(
+          flex: 3,
+          child: Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
+            textAlign: TextAlign.right,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

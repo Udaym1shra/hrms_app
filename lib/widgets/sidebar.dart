@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../utils/app_theme.dart';
 import '../features/auth/data/models/user_model.dart';
 
 class Sidebar extends StatefulWidget {
@@ -7,6 +6,7 @@ class Sidebar extends StatefulWidget {
   final int selectedIndex;
   final Function(int) onItemSelected;
   final VoidCallback? onLogout;
+  final VoidCallback? onClose;
 
   const Sidebar({
     Key? key,
@@ -14,6 +14,7 @@ class Sidebar extends StatefulWidget {
     required this.selectedIndex,
     required this.onItemSelected,
     this.onLogout,
+    this.onClose,
   }) : super(key: key);
 
   @override
@@ -64,29 +65,25 @@ class _SidebarState extends State<Sidebar> with TickerProviderStateMixin {
         opacity: _fadeAnimation,
         child: Container(
           width: 280,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF1F2937), Color(0xFF111827)],
-            ),
+          decoration: const BoxDecoration(
+            color: Color(0xFF2C3E50), // Dark blue-grey background
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black26,
                 blurRadius: 10,
-                offset: const Offset(2, 0),
+                offset: Offset(2, 0),
               ),
             ],
           ),
           child: Column(
             children: [
-              // Enhanced Header with user info
+              // Header with logo and close button
               _buildHeader(),
 
-              // Navigation Menu with improved design
+              // Navigation Menu
               Expanded(child: _buildNavigationMenu(roleId)),
 
-              // Enhanced Logout Button
+              // Logout Button
               _buildLogoutButton(),
             ],
           ),
@@ -97,136 +94,185 @@ class _SidebarState extends State<Sidebar> with TickerProviderStateMixin {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppTheme.primaryColor.withOpacity(0.1),
-            AppTheme.primaryColor.withOpacity(0.05),
-          ],
-        ),
-        border: Border(
-          bottom: BorderSide(
-            color: AppTheme.primaryColor.withOpacity(0.2),
-            width: 1,
-          ),
-        ),
-      ),
+      padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          // Enhanced Company Logo with animation
-          Container(
-            width: 70,
-            height: 70,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppTheme.primaryColor,
-                  AppTheme.primaryColor.withOpacity(0.8),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.primaryColor.withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.business_rounded,
-              color: Colors.white,
-              size: 32,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'HRMS Mobile',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (widget.user != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.2),
-                  width: 1,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    widget.user!.fullName,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    textAlign: TextAlign.center,
+          // Close button and logo row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Close button
+              if (widget.onClose != null)
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF343A40), // Dark grey
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      widget.user!.role?.name ?? 'Employee',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 11,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: widget.onClose,
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 20,
                       ),
                     ),
                   ),
-                ],
+                ),
+              const SizedBox(width: 12),
+              // Logo with orange background
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFA500), // Orange
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'GGen',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
+                      letterSpacing: 1,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ],
       ),
     );
   }
 
   Widget _buildNavigationMenu(int roleId) {
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      children: [
-        // Add section headers for better organization
-        _buildSectionHeader('Main'),
-        ..._buildMenuItems(roleId).take(1), // Dashboard
+    final items = _getMenuItemsList(roleId);
+    final List<Widget> menuWidgets = [];
 
-        const SizedBox(height: 8),
-        _buildSectionHeader('Management'),
-        ..._buildMenuItems(roleId).skip(1),
-      ],
+    // Overview section
+    final overviewItems = items
+        .where(
+          (item) => item.title == 'Dashboard' || item.title == 'My Profile',
+        )
+        .toList();
+
+    if (overviewItems.isNotEmpty) {
+      menuWidgets.add(_buildSectionHeader('OVERVIEW'));
+      for (var item in overviewItems) {
+        menuWidgets.add(_buildMenuItem(item));
+      }
+      menuWidgets.add(const SizedBox(height: 12));
+    }
+
+    // Time & Attendance section
+    final attendanceItems = items
+        .where(
+          (item) =>
+              item.title == 'Attendance' ||
+              item.title == 'My Attendance' ||
+              item.title == 'Time Sheet' ||
+              item.title == 'Overtime',
+        )
+        .toList();
+
+    if (attendanceItems.isNotEmpty) {
+      menuWidgets.add(_buildSectionHeader('TIME & ATTENDANCE'));
+      for (var item in attendanceItems) {
+        menuWidgets.add(_buildMenuItem(item));
+      }
+      menuWidgets.add(const SizedBox(height: 12));
+    }
+
+    // Leave Management section
+    final leaveItems = items
+        .where((item) => item.title == 'Leaves' || item.title == 'My Leaves')
+        .toList();
+
+    if (leaveItems.isNotEmpty) {
+      menuWidgets.add(_buildSectionHeader('LEAVE MANAGEMENT'));
+      for (var item in leaveItems) {
+        menuWidgets.add(_buildMenuItem(item));
+      }
+      menuWidgets.add(const SizedBox(height: 12));
+    }
+
+    // Other items
+    final otherItems = items
+        .where(
+          (item) =>
+              item.title != 'Dashboard' &&
+              item.title != 'My Profile' &&
+              item.title != 'Attendance' &&
+              item.title != 'My Attendance' &&
+              item.title != 'Time Sheet' &&
+              item.title != 'Overtime' &&
+              item.title != 'Leaves' &&
+              item.title != 'My Leaves',
+        )
+        .toList();
+
+    if (otherItems.isNotEmpty) {
+      menuWidgets.add(_buildSectionHeader('OTHER'));
+      for (var item in otherItems) {
+        menuWidgets.add(_buildMenuItem(item));
+      }
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      children: menuWidgets,
     );
+  }
+
+  List<SidebarItem> _getMenuItemsList(int roleId) {
+    List<SidebarItem> items = [];
+
+    // Common items for all roles
+    items.addAll([
+      SidebarItem(icon: Icons.dashboard, title: 'Dashboard', index: 0),
+    ]);
+
+    // Role-specific items
+    switch (roleId) {
+      case 1: // Super Admin
+        items.addAll(_getSuperAdminItems());
+        break;
+      case 2: // Admin
+        items.addAll(_getAdminItems());
+        break;
+      case 3: // HR
+        items.addAll(_getHRItems());
+        break;
+      case 4: // Manager
+        items.addAll(_getManagerItems());
+        break;
+      case 5: // Employee
+      default:
+        items.addAll(_getEmployeeItems());
+        break;
+    }
+
+    return items;
   }
 
   Widget _buildSectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
       child: Text(
         title,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Colors.white.withOpacity(0.6),
+          color: const Color(0xFFE0E0E0), // Light grey
           fontWeight: FontWeight.w600,
-          letterSpacing: 1.2,
+          letterSpacing: 1.5,
           fontSize: 11,
         ),
       ),
@@ -270,37 +316,6 @@ class _SidebarState extends State<Sidebar> with TickerProviderStateMixin {
         ),
       ),
     );
-  }
-
-  List<Widget> _buildMenuItems(int roleId) {
-    List<SidebarItem> items = [];
-
-    // Common items for all roles
-    items.addAll([
-      SidebarItem(icon: Icons.dashboard, title: 'Dashboard', index: 0),
-    ]);
-
-    // Role-specific items
-    switch (roleId) {
-      case 1: // Super Admin
-        items.addAll(_getSuperAdminItems());
-        break;
-      case 2: // Admin
-        items.addAll(_getAdminItems());
-        break;
-      case 3: // HR
-        items.addAll(_getHRItems());
-        break;
-      case 4: // Manager
-        items.addAll(_getManagerItems());
-        break;
-      case 5: // Employee
-      default:
-        items.addAll(_getEmployeeItems());
-        break;
-    }
-
-    return items.map((item) => _buildMenuItem(item)).toList();
   }
 
   List<SidebarItem> _getSuperAdminItems() {
@@ -351,12 +366,26 @@ class _SidebarState extends State<Sidebar> with TickerProviderStateMixin {
 
   List<SidebarItem> _getEmployeeItems() {
     return [
-      SidebarItem(icon: Icons.schedule, title: 'My Attendance', index: 6),
-      SidebarItem(icon: Icons.event, title: 'My Leaves', index: 7),
       SidebarItem(icon: Icons.person, title: 'My Profile', index: 11),
+      SidebarItem(icon: Icons.schedule, title: 'Attendance', index: 6),
+      SidebarItem(
+        icon: Icons.description_rounded,
+        title: 'Time Sheet',
+        index: 12,
+      ),
+      SidebarItem(
+        icon: Icons.access_time_rounded,
+        title: 'Overtime',
+        index: 13,
+      ),
+      SidebarItem(
+        icon: Icons.calendar_today_rounded,
+        title: 'My Leaves',
+        index: 7,
+      ),
       SidebarItem(icon: Icons.description, title: 'Documents', index: 12),
-      SidebarItem(icon: Icons.book, title: 'Modules', index: 13),
-      SidebarItem(icon: Icons.quiz, title: 'Assessments', index: 14),
+      SidebarItem(icon: Icons.book, title: 'Modules', index: 14),
+      SidebarItem(icon: Icons.quiz, title: 'Assessments', index: 15),
     ];
   }
 
@@ -364,79 +393,49 @@ class _SidebarState extends State<Sidebar> with TickerProviderStateMixin {
     final isSelected = widget.selectedIndex == item.index;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => widget.onItemSelected(item.index),
-          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            widget.onItemSelected(item.index);
+            // Close sidebar on mobile after selection
+            if (widget.onClose != null &&
+                MediaQuery.of(context).size.width <= 768) {
+              widget.onClose?.call();
+            }
+          },
+          borderRadius: BorderRadius.circular(8),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeInOut,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             decoration: BoxDecoration(
-              gradient: isSelected
-                  ? LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        AppTheme.primaryColor.withOpacity(0.2),
-                        AppTheme.primaryColor.withOpacity(0.1),
-                      ],
-                    )
-                  : null,
-              borderRadius: BorderRadius.circular(12),
-              border: isSelected
-                  ? Border.all(
-                      color: AppTheme.primaryColor.withOpacity(0.3),
-                      width: 1,
-                    )
-                  : null,
+              color: isSelected ? const Color(0xFF34688C) : Colors.transparent,
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(isSelected ? 8 : 0),
+                bottomRight: Radius.circular(isSelected ? 8 : 0),
+              ),
             ),
             child: Row(
               children: [
-                // Enhanced Icon with background
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppTheme.primaryColor.withOpacity(0.2)
-                        : Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    item.icon,
-                    color: isSelected ? AppTheme.primaryColor : Colors.white70,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // Enhanced Text
+                // Icon
+                Icon(item.icon, color: Colors.white, size: 22),
+                const SizedBox(width: 14),
+                // Text
                 Expanded(
                   child: Text(
                     item.title,
                     style: TextStyle(
-                      color: isSelected
-                          ? AppTheme.primaryColor
-                          : Colors.white70,
+                      color: Colors.white,
                       fontWeight: isSelected
                           ? FontWeight.w600
-                          : FontWeight.w500,
+                          : FontWeight.w400,
                       fontSize: 14,
                       letterSpacing: 0.2,
                     ),
                   ),
                 ),
-                // Selection indicator
-                if (isSelected)
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
               ],
             ),
           ),

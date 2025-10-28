@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as latlong;
@@ -37,12 +38,15 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
   latlong.LatLng? _currentLocationPoint;
   MapController? _mapController;
 
+  // Location stream subscription for live tracking
+  StreamSubscription<geolocator.Position>? _positionStreamSubscription;
+
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
     _loadGeofenceConfig();
-    _getCurrentLocation();
+    _startLocationTracking();
 
     // Listen to GeofenceService for real-time updates
     _listenToGeofenceService();
@@ -114,7 +118,8 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
     }
   }
 
-  Future<void> _getCurrentLocation() async {
+  // Start continuous location tracking
+  Future<void> _startLocationTracking() async {
     try {
       geolocator.LocationPermission permission =
           await geolocator.Geolocator.checkPermission();
@@ -130,6 +135,110 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
         return;
       }
 
+      // Get initial position first
+      geolocator.Position initialPosition =
+          await geolocator.Geolocator.getCurrentPosition(
+            desiredAccuracy: geolocator.LocationAccuracy.high,
+          );
+
+      _safeSetState(() {
+        _currentPosition = initialPosition;
+        _checkGeofenceStatus();
+        _isLoading = false;
+      });
+
+      // Set up continuous location stream
+      _positionStreamSubscription =
+          geolocator.Geolocator.getPositionStream(
+            locationSettings: const geolocator.LocationSettings(
+              accuracy: geolocator.LocationAccuracy.high,
+              distanceFilter: 10, // Update every 10 meters
+            ),
+          ).listen(
+            (geolocator.Position position) {
+              print(
+                '📍 Location updated: ${position.latitude}, ${position.longitude}',
+              );
+              if (!mounted || _isDisposed) return;
+
+              // Update position and map display in a single setState
+              _safeSetState(() {
+                _currentPosition = position;
+                // Update map display with new location
+                if (_currentPosition != null) {
+                  _currentLocationPoint = latlong.LatLng(
+                    _currentPosition!.latitude,
+                    _currentPosition!.longitude,
+                  );
+                }
+                // Check geofence status and update display
+                if (_currentPosition != null && _geofenceConfig != null) {
+                  final userLat = _currentPosition!.latitude;
+                  final userLon = _currentPosition!.longitude;
+                  bool isInside = false;
+
+                  // Check if it's a polygon boundary
+                  if (_geofenceConfig!['boundary'] != null &&
+                      _geofenceConfig!['boundary']['type'] == 'Polygon') {
+                    // Server provides boundary coordinates as [longitude, latitude]
+                    final coordinates =
+                        _geofenceConfig!['boundary']['coordinates'][0]
+                            as List<dynamic>;
+                    final polygonCoords = coordinates.map<List<double>>((
+                      coord,
+                    ) {
+                      final coordList = coord as List<dynamic>;
+                      // Keep [lon, lat] format as received from server
+                      return [coordList[0].toDouble(), coordList[1].toDouble()];
+                    }).toList();
+                    isInside = _isPointInPolygonConsistent(
+                      userLat,
+                      userLon,
+                      polygonCoords,
+                    );
+                  } else {
+                    final geofenceLat =
+                        _geofenceConfig!['lat']?.toDouble() ?? 0.0;
+                    final geofenceLon =
+                        _geofenceConfig!['lon']?.toDouble() ?? 0.0;
+                    final radius =
+                        _geofenceConfig!['radius']?.toDouble() ?? 0.0;
+                    if (geofenceLat != 0.0 &&
+                        geofenceLon != 0.0 &&
+                        radius > 0) {
+                      final distance = geolocator.Geolocator.distanceBetween(
+                        userLat,
+                        userLon,
+                        geofenceLat,
+                        geofenceLon,
+                      );
+                      isInside = distance <= radius;
+                    }
+                  }
+                  _isInsideGeofence = isInside;
+                }
+              });
+            },
+            onError: (error) {
+              print('❌ Location stream error: $error');
+              if (mounted && !_isDisposed) {
+                _safeSetState(() {
+                  _error = 'Location tracking error: $error';
+                });
+              }
+            },
+          );
+    } catch (e) {
+      _safeSetState(() {
+        _error = 'Error getting location: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Get current location (for refresh button)
+  Future<void> _getCurrentLocation() async {
+    try {
       geolocator.Position position =
           await geolocator.Geolocator.getCurrentPosition(
             desiredAccuracy: geolocator.LocationAccuracy.high,
@@ -138,12 +247,10 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
       _safeSetState(() {
         _currentPosition = position;
         _checkGeofenceStatus();
-        _isLoading = false;
       });
     } catch (e) {
       _safeSetState(() {
         _error = 'Error getting location: $e';
-        _isLoading = false;
       });
     }
   }
@@ -164,10 +271,12 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
       print('🔍 Using GeofenceService for polygon validation');
 
       // Convert dynamic coordinates to List<List<double>>
+      // Server provides boundary coordinates as [longitude, latitude] format
       final coordinates =
           _geofenceConfig!['boundary']['coordinates'][0] as List<dynamic>;
       final polygonCoords = coordinates.map<List<double>>((coord) {
         final coordList = coord as List<dynamic>;
+        // Keep [lon, lat] format as received from server
         return [coordList[0].toDouble(), coordList[1].toDouble()]; // [lon, lat]
       }).toList();
 
@@ -201,10 +310,12 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
   }
 
   // Consistent polygon validation algorithm matching GeofenceService
+  // Note: polygon parameter expects coordinates in [lon, lat] format (as received from server)
+  // polygon[i][0] = longitude, polygon[i][1] = latitude
   bool _isPointInPolygonConsistent(
-    double lat,
-    double lon,
-    List<List<double>> polygon,
+    double lat, // User's latitude
+    double lon, // User's longitude
+    List<List<double>> polygon, // Polygon coordinates in [lon, lat] format
   ) {
     if (polygon.length < 3) {
       print('⚠️ Polygon has less than 3 points, cannot validate');
@@ -215,12 +326,15 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
     int j = polygon.length - 1;
 
     for (int i = 0; i < polygon.length; i++) {
-      final xi = polygon[i][0]; // longitude
-      final yi = polygon[i][1]; // latitude
-      final xj = polygon[j][0]; // longitude
-      final yj = polygon[j][1]; // latitude
+      // Server provides coordinates as [longitude, latitude]
+      final xi = polygon[i][0]; // longitude from server
+      final yi = polygon[i][1]; // latitude from server
+      final xj = polygon[j][0]; // longitude from server
+      final yj = polygon[j][1]; // latitude from server
 
-      // Ray casting algorithm with proper coordinate handling (same as GeofenceService)
+      // Ray casting algorithm with proper coordinate handling
+      // Compares latitude values (yi, yj) with user's latitude
+      // Compares longitude values (xi, xj) with user's longitude
       if (((yi > lat) != (yj > lat)) &&
           (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
         inside = !inside;
@@ -231,14 +345,32 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
     return inside;
   }
 
+  @override
+  void dispose() {
+    _isDisposed = true;
+    _positionStreamSubscription?.cancel();
+    _mapController?.dispose();
+    super.dispose();
+  }
+
   // Update map display with geofence and current location
   void _updateMapDisplay() {
     // Use current position for map display
     if (_currentPosition != null) {
-      _currentLocationPoint = latlong.LatLng(
+      final newLocationPoint = latlong.LatLng(
         _currentPosition!.latitude,
         _currentPosition!.longitude,
       );
+
+      // Only update if location actually changed
+      if (_currentLocationPoint == null ||
+          _currentLocationPoint!.latitude != newLocationPoint.latitude ||
+          _currentLocationPoint!.longitude != newLocationPoint.longitude) {
+        _currentLocationPoint = newLocationPoint;
+        print(
+          '🗺️ Map location updated to: ${_currentLocationPoint!.latitude}, ${_currentLocationPoint!.longitude}',
+        );
+      }
     }
 
     if (_geofenceConfig == null) return;
@@ -251,11 +383,14 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
       final coordinates =
           _geofenceConfig!['boundary']['coordinates'][0] as List<dynamic>;
 
-      // Convert polygon coordinates to LatLng list
+      // Convert polygon coordinates to LatLng list for map display
+      // Server provides coordinates as [longitude, latitude]
       for (final coord in coordinates) {
         final coordList = coord as List<dynamic>;
-        final lat = coordList[1].toDouble(); // latitude
-        final lon = coordList[0].toDouble(); // longitude
+        // Extract: coordList[0] = longitude, coordList[1] = latitude
+        final lon = coordList[0].toDouble(); // longitude from server
+        final lat = coordList[1].toDouble(); // latitude from server
+        // LatLng constructor expects (latitude, longitude)
         _polygonPoints.add(latlong.LatLng(lat, lon));
       }
 
@@ -372,6 +507,7 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                 child: const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       CircularProgressIndicator(),
                       SizedBox(height: 16),
@@ -394,6 +530,7 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.error_outline,
@@ -401,10 +538,12 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                         size: 48,
                       ),
                       const SizedBox(height: 16),
-                      Text(
-                        _error!,
-                        style: TextStyle(color: AppTheme.errorColor),
-                        textAlign: TextAlign.center,
+                      Flexible(
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: AppTheme.errorColor),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ],
                   ),
@@ -424,6 +563,7 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.warning_outlined,
@@ -431,10 +571,12 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                         size: 48,
                       ),
                       const SizedBox(height: 16),
-                      Text(
-                        'No geofence configuration found',
-                        style: TextStyle(color: AppTheme.warningColor),
-                        textAlign: TextAlign.center,
+                      Flexible(
+                        child: Text(
+                          'No geofence configuration found',
+                          style: TextStyle(color: AppTheme.warningColor),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ],
                   ),

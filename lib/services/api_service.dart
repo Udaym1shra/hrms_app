@@ -6,11 +6,11 @@ import '../models/employee_models.dart';
 import '../models/attendance_models.dart';
 import '../core/network/api_endpoints.dart';
 import 'storage_service.dart';
+import '../core/constants/app_constants.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://hrms.qreams.com/hdlc/dev';
-  static const String hrContext = 'hrapi';
-
+  static const String baseUrl = AppConstants.baseUrl;
+  static const String hrContext = AppConstants.hrContext;
   final StorageService _storageService;
   late final http.Client _client;
 
@@ -310,6 +310,7 @@ class ApiService {
     required double lat,
     required double lon,
     required String dateWithTime,
+    String? punchType,
     // required int tenantId,
   }) async {
     try {
@@ -324,8 +325,8 @@ class ApiService {
           'lat': lat,
           'lon': lon,
           'date': dateWithTime,
+          if (punchType != null) 'punchType': punchType,
           // 'tenantId': tenantId,
-          // 'action': 'PunchIn', // Add action type to distinguish punch in/out
         }),
       );
 
@@ -340,6 +341,7 @@ class ApiService {
     required double lat,
     required double lon,
     required String dateWithTime,
+    String? punchType,
     // required int tenantId,
   }) async {
     try {
@@ -354,8 +356,8 @@ class ApiService {
           'lat': lat,
           'lon': lon,
           'date': dateWithTime,
+          if (punchType != null) 'punchType': punchType,
           // 'tenantId': tenantId,
-          // 'action': 'PunchOut', // Add action type to distinguish punch in/out
         }),
       );
 

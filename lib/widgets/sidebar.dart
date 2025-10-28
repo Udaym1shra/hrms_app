@@ -58,38 +58,47 @@ class _SidebarState extends State<Sidebar> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final roleId = widget.user?.role?.id ?? 4; // Default to employee role
+    final isMobile = MediaQuery.of(context).size.width <= 768;
 
-    return SlideTransition(
-      position: _slideAnimation,
-      child: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Container(
-          width: 280,
-          decoration: const BoxDecoration(
-            color: Color(0xFF2C3E50), // Dark blue-grey background
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 10,
-                offset: Offset(2, 0),
-              ),
-            ],
+    Widget sidebarContent = Container(
+      width: 280,
+      decoration: const BoxDecoration(
+        color: Color(0xFF2C3E50), // Dark blue-grey background
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 10,
+            offset: Offset(2, 0),
           ),
-          child: Column(
-            children: [
-              // Header with logo and close button
-              _buildHeader(),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Header with logo and close button
+          _buildHeader(),
 
-              // Navigation Menu
-              Expanded(child: _buildNavigationMenu(roleId)),
+          // Navigation Menu
+          Expanded(child: _buildNavigationMenu(roleId)),
 
-              // Logout Button
-              _buildLogoutButton(),
-            ],
-          ),
-        ),
+          // Logout Button
+          _buildLogoutButton(),
+        ],
       ),
     );
+
+    // Only apply internal animations on desktop (when parent doesn't handle them)
+    if (!isMobile) {
+      return SlideTransition(
+        position: _slideAnimation,
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: sidebarContent,
+        ),
+      );
+    }
+
+    // On mobile, return content directly (animations handled by parent)
+    return sidebarContent;
   }
 
   Widget _buildHeader() {

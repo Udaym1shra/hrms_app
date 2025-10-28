@@ -19,15 +19,30 @@ class EmployeeDashboard extends StatefulWidget {
   State<EmployeeDashboard> createState() => _EmployeeDashboardState();
 }
 
-class _EmployeeDashboardState extends State<EmployeeDashboard> {
+class _EmployeeDashboardState extends State<EmployeeDashboard>
+    with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
   bool _isSidebarOpen = false;
   late GeofenceService _geofenceService;
   bool _isGeofencingSupported = false;
+  late AnimationController _sidebarController;
+  late Animation<double> _sidebarAnimation;
 
   @override
   void initState() {
     super.initState();
+
+    // Initialize sidebar animation controller FIRST (synchronously)
+    _sidebarController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _sidebarAnimation = CurvedAnimation(
+      parent: _sidebarController,
+      curve: Curves.easeInOut,
+    );
+
+    // Then initialize other services
     _geofenceService = GeofenceService();
     _initializeServices();
     _loadEmployeeData();
@@ -37,7 +52,33 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   @override
   void dispose() {
     _geofenceService.dispose();
+    if (_sidebarController.isAnimating || _sidebarController.isCompleted) {
+      _sidebarController.stop();
+    }
+    _sidebarController.dispose();
     super.dispose();
+  }
+
+  void _toggleSidebar() {
+    final wasOpen = _isSidebarOpen;
+    setState(() {
+      _isSidebarOpen = !_isSidebarOpen;
+    });
+
+    if (_isSidebarOpen && !wasOpen) {
+      _sidebarController.forward();
+    } else if (!_isSidebarOpen && wasOpen) {
+      _sidebarController.reverse();
+    }
+  }
+
+  void _closeSidebar() {
+    if (_isSidebarOpen) {
+      setState(() {
+        _isSidebarOpen = false;
+      });
+      _sidebarController.reverse();
+    }
   }
 
   void _initializeServices() {
@@ -153,54 +194,88 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width <= 768;
+
     return Consumer2<AuthProvider, EmployeeProvider>(
       builder: (context, authProvider, employeeProvider, child) {
         return Scaffold(
           backgroundColor: AppTheme.backgroundColor,
           body: Stack(
             children: [
-              Row(
-                children: [
-                  // Sidebar
-                  if (_isSidebarOpen || MediaQuery.of(context).size.width > 768)
+              // Desktop Layout with Sidebar
+              if (!isMobile)
+                Row(
+                  children: [
+                    // Desktop Sidebar (permanent)
                     Sidebar(
                       user: authProvider.user,
                       selectedIndex: _selectedIndex,
                       onItemSelected: _onSidebarItemSelected,
                       onLogout: _handleLogout,
-                      onClose: () {
-                        setState(() {
-                          _isSidebarOpen = false;
-                        });
-                      },
+                      onClose: null,
                     ),
 
-                  // Main Content
-                  Expanded(
-                    child: Column(
-                      children: [
-                        // Top App Bar
-                        _buildAppBar(context, authProvider),
+                    // Main Content
+                    Expanded(
+                      child: Column(
+                        children: [
+                          // Top App Bar
+                          _buildAppBar(context, authProvider),
 
-                        // Main Content Area
-                        Expanded(child: _buildMainContent(employeeProvider)),
-                      ],
+                          // Main Content Area
+                          Expanded(child: _buildMainContent(employeeProvider)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+              // Mobile Layout without Sidebar in main content
+              if (isMobile)
+                Column(
+                  children: [
+                    // Top App Bar
+                    _buildAppBar(context, authProvider),
+
+                    // Main Content Area
+                    Expanded(child: _buildMainContent(employeeProvider)),
+                  ],
+                ),
+
+              // Mobile backdrop overlay with animation
+              if (isMobile && _isSidebarOpen)
+                FadeTransition(
+                  opacity: _sidebarAnimation,
+                  child: GestureDetector(
+                    onTap: _closeSidebar,
+                    child: Container(
+                      color: Colors.black.withOpacity(0.5),
+                      child: const SizedBox.expand(),
                     ),
                   ),
-                ],
-              ),
+                ),
 
-              // Mobile backdrop overlay
-              if (_isSidebarOpen && MediaQuery.of(context).size.width <= 768)
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _isSidebarOpen = false;
-                    });
-                  },
-                  child: Container(
-                    color: Colors.black.withOpacity(0.5),
-                    child: const SizedBox.expand(),
+              // Mobile Sidebar (slides in from left)
+              if (isMobile)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(-1.0, 0.0),
+                      end: Offset.zero,
+                    ).animate(_sidebarAnimation),
+                    child: IgnorePointer(
+                      ignoring: !_isSidebarOpen,
+                      child: Sidebar(
+                        user: authProvider.user,
+                        selectedIndex: _selectedIndex,
+                        onItemSelected: _onSidebarItemSelected,
+                        onLogout: _handleLogout,
+                        onClose: _closeSidebar,
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -211,8 +286,26 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   }
 
   Widget _buildAppBar(BuildContext context, AuthProvider authProvider) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth <= 768;
+
+    // Responsive padding
+    final horizontalPadding = isMobile ? 12.0 : 20.0;
+    final verticalPadding = isMobile ? 12.0 : 16.0;
+
+    // Responsive icon sizes
+    final iconSize = isMobile ? 18.0 : 24.0;
+    final menuIconSize = isMobile ? 20.0 : 24.0;
+
+    // Responsive spacing
+    final spacing = isMobile ? 8.0 : 16.0;
+    final titleSpacing = isMobile ? 8.0 : 12.0;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: EdgeInsets.symmetric(
+        horizontal: horizontalPadding,
+        vertical: verticalPadding,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -233,23 +326,28 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              icon: Icon(Icons.menu, color: AppTheme.primaryColor),
-              onPressed: () {
-                setState(() {
-                  _isSidebarOpen = !_isSidebarOpen;
-                });
-              },
+              icon: Icon(
+                Icons.menu,
+                color: AppTheme.primaryColor,
+                size: menuIconSize,
+              ),
+              onPressed: _toggleSidebar,
+              padding: EdgeInsets.all(isMobile ? 8 : 12),
+              constraints: BoxConstraints(
+                minWidth: isMobile ? 36 : 48,
+                minHeight: isMobile ? 36 : 48,
+              ),
             ),
           ),
 
-          const SizedBox(width: 16),
+          SizedBox(width: spacing),
 
           // Title with icon
           Expanded(
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: EdgeInsets.all(isMobile ? 6 : 8),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -259,19 +357,23 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     ),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.dashboard_rounded,
                     color: Colors.white,
-                    size: 20,
+                    size: iconSize,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Text(
-                  _getPageTitle(),
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
-                    letterSpacing: 0.5,
+                SizedBox(width: titleSpacing),
+                Flexible(
+                  child: Text(
+                    _getPageTitle(),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimary,
+                      letterSpacing: 0.5,
+                      fontSize: isMobile ? 16 : 20,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -280,7 +382,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
           // User Info with enhanced design
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 8 : 12,
+              vertical: isMobile ? 4 : 6,
+            ),
             decoration: BoxDecoration(
               color: AppTheme.backgroundColor,
               borderRadius: BorderRadius.circular(20),
@@ -309,22 +414,22 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     ],
                   ),
                   child: CircleAvatar(
-                    radius: 18,
+                    radius: isMobile ? 14 : 18,
                     backgroundColor: Colors.transparent,
                     child: Text(
                       authProvider.user?.firstName
                               .substring(0, 1)
                               .toUpperCase() ??
                           'U',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: isMobile ? 14 : 16,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: isMobile ? 6 : 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -334,12 +439,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: AppTheme.textPrimary,
+                        fontSize: isMobile ? 12 : 14,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isMobile ? 6 : 8,
+                        vertical: isMobile ? 1 : 2,
                       ),
                       decoration: BoxDecoration(
                         color: AppTheme.primaryColor.withOpacity(0.1),
@@ -350,7 +457,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppTheme.primaryColor,
                           fontWeight: FontWeight.w500,
-                          fontSize: 10,
+                          fontSize: isMobile ? 9 : 10,
                         ),
                       ),
                     ),
@@ -1625,8 +1732,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   void _onSidebarItemSelected(int index) {
     setState(() {
       _selectedIndex = index;
-      _isSidebarOpen = false;
     });
+    // Close sidebar on mobile after selection
+    if (MediaQuery.of(context).size.width <= 768) {
+      _closeSidebar();
+    }
   }
 
   void _handleLogout() {

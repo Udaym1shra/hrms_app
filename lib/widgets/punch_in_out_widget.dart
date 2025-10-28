@@ -17,7 +17,6 @@ class PunchInOutWidget extends StatefulWidget {
 }
 
 class _PunchInOutWidgetState extends State<PunchInOutWidget> {
-  bool _isPunchedIn = false;
   bool _isLoading = false;
   Position? _currentPosition;
   String? _error;
@@ -32,6 +31,10 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
   // Geofence service
   final GeofenceService _geofenceService = GeofenceService();
   bool _isInsideGeofence = false;
+
+  // Location stream subscription for continuous tracking
+  StreamSubscription<Position>? _positionStreamSubscription;
+  bool _isDisposed = false;
 
   @override
   void initState() {
@@ -49,6 +52,8 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
       _fetchTodayAttendance();
       // Also refresh geofence status when dependencies change
       _refreshGeofenceStatus();
+      // Ensure geofence config is loaded if not already
+      _fetchGeofenceConfig();
     }
   }
 
@@ -56,12 +61,52 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
   Future<void> _refreshGeofenceStatus() async {
     try {
       if (_currentPosition != null) {
-        print('🔄 Refreshing geofence status...');
-        await _geofenceService.refreshGeofenceStatus(_currentPosition!);
-        if (mounted) {
+        print('🔄 Refreshing geofence status in punch widget...');
+        print(
+          '📍 Current position: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}',
+        );
+
+        // Check if geofence exists before refreshing
+        final geofence = _geofenceService.getCurrentGeofence();
+        if (geofence == null) {
+          print(
+            '⚠️ No geofence config found - refreshGeofenceStatus will not run',
+          );
+          print('🔍 Checking if geofence needs to be loaded...');
+          return;
+        }
+
+        // First update the local state from service (in case stream hasn't fired yet)
+        final currentStatus = _geofenceService.isInsideGeofenceStatus;
+        if (mounted && !_isDisposed) {
           setState(() {
-            _isInsideGeofence = _geofenceService.isInsideGeofenceStatus;
+            _isInsideGeofence = currentStatus;
           });
+          print('🔄 Initial status from service: $currentStatus');
+        }
+
+        // Then refresh - the stream listener will update the state automatically
+        await _geofenceService.refreshGeofenceStatus(_currentPosition!);
+
+        // Read updated status after refresh
+        final newStatus = _geofenceService.isInsideGeofenceStatus;
+        final hasConfig = _geofenceService.getCurrentGeofence() != null;
+
+        if (mounted && !_isDisposed) {
+          print(
+            '🔄 After refresh - Service status: $newStatus, Widget status: $_isInsideGeofence',
+          );
+          print('🔄 Has geofence config: $hasConfig');
+
+          // Ensure local state matches service state
+          if (_isInsideGeofence != newStatus) {
+            setState(() {
+              _isInsideGeofence = newStatus;
+            });
+            print(
+              '🔄 Corrected widget state to match service: $_isInsideGeofence',
+            );
+          }
         }
       }
     } catch (e) {
@@ -76,10 +121,22 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
 
       await _geofenceService.initialize();
 
+      // Check if geofence was loaded from shared preferences
+      final geofence = _geofenceService.getCurrentGeofence();
+      if (geofence != null) {
+        print(
+          '✅ Geofence service initialized - found existing geofence config',
+        );
+        print('🔍 Geofence type: ${_geofenceService.getCurrentGeofenceType()}');
+      } else {
+        print(
+          '⚠️ Geofence service initialized but no geofence config found yet',
+        );
+      }
+
       // Listen to geofence status changes for real-time UI updates
       _geofenceService.isInsideGeofence.listen((isInside) {
-        if (mounted) {
-          print('🔄 Geofence status update received: $isInside');
+        if (mounted && !_isDisposed) {
           setState(() {
             _isInsideGeofence = isInside;
           });
@@ -88,9 +145,10 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
 
       // Listen to geofence events
       _geofenceService.geofenceEvents.listen((event) {
-        if (mounted) {
+        if (mounted && !_isDisposed) {
+          final isInside = event.type == GeofenceEventType.enter;
           setState(() {
-            _isInsideGeofence = event.type == GeofenceEventType.enter;
+            _isInsideGeofence = isInside;
           });
 
           // Show notification for geofence events
@@ -109,8 +167,9 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
         }
       });
 
-      // Update geofence status
+      // Update initial geofence status
       _isInsideGeofence = _geofenceService.isInsideGeofenceStatus;
+      print('🔍 Initial geofence status: $_isInsideGeofence');
 
       print('✅ Geofence service initialized in punch widget');
     } catch (e) {
@@ -141,7 +200,11 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
         await _fetchTodayAttendance();
 
         // Fetch geofence configuration from server
+        print('About to call _fetchGeofenceConfig from _loadSessionData');
         await _fetchGeofenceConfig();
+        print('Completed _fetchGeofenceConfig from _loadSessionData');
+      } else {
+        print('⚠️ Cannot fetch data - Employee ID is null');
       }
 
       print('=== Session Data Loading Complete ===');
@@ -162,10 +225,15 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
   }
 
   Future<void> _fetchTodayAttendance() async {
-    if (_employeeId == null) return;
+    if (_employeeId == null) {
+      print('⚠️ Cannot fetch attendance - Employee ID is null');
+      return;
+    }
 
     try {
-      print('Fetching today\'s attendance for employee: $_employeeId');
+      print(
+        '🔄 Fetching today\'s attendance for employee: $_employeeId, tenant: $_tenantId',
+      );
 
       // First try to get today's attendance list
       final attendanceResponse = await widget.apiService.getTodayAttendance(
@@ -173,87 +241,272 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
         _tenantId!,
       );
 
-      print('Today\'s attendance response: ${attendanceResponse.toJson()}');
+      print('📥 Today\'s attendance response: ${attendanceResponse.toJson()}');
+      print('📥 Response error: ${attendanceResponse.error}');
 
-      if (!attendanceResponse.error &&
-          attendanceResponse.content.data.isNotEmpty) {
-        final todayAttendance = attendanceResponse.content.data.first;
+      // Extract attendance logs from the response
+      // The logs are in content.attendanceLogsId array (if attendance record exists)
+      if (!attendanceResponse.error) {
+        final responseData = attendanceResponse.toJson();
+        final content = responseData['content'];
 
-        // Get the attendance ID to fetch detailed logs
-        // Note: AttendanceRecord doesn't have an 'id' field directly
-        // We'll use the attendance date as identifier or fetch from logs
-        print('Processing attendance record for detailed logs');
+        // Check if attendance record exists (content has direct fields, not content.data)
+        if (content != null && content is Map) {
+          // Check if it's the direct attendance record format (has attendanceLogsId)
+          if (content.containsKey('attendanceLogsId')) {
+            final logsArray = content['attendanceLogsId'];
+            print(
+              '📊 Found attendance logs in response: ${logsArray?.length ?? 0} logs',
+            );
 
-        // Fetch detailed attendance logs using employee ID and today's date
-        final today = DateTime.now().toIso8601String().split(
-          'T',
-        )[0]; // YYYY-MM-DD format
-        await _fetchAttendanceLogsByEmployeeAndDate(today);
+            if (logsArray != null &&
+                logsArray is List &&
+                logsArray.isNotEmpty) {
+              print('🔄 Processing ${logsArray.length} logs from array');
 
-        // Check if employee has punched in today
-        final hasPunchedIn =
-            todayAttendance.punchInTime != null &&
-            todayAttendance.punchInTime!.isNotEmpty;
-        final hasPunchedOut =
-            todayAttendance.punchOutTime != null &&
-            todayAttendance.punchOutTime!.isNotEmpty;
+              // Convert logs to our format
+              final formattedLogs = <Map<String, dynamic>>[];
+              for (var i = 0; i < logsArray.length; i++) {
+                final log = logsArray[i];
+                print('   Processing log $i: $log (type: ${log.runtimeType})');
 
-        setState(() {
-          _isPunchedIn = hasPunchedIn && !hasPunchedOut;
-        });
+                // Handle different log formats
+                Map<String, dynamic> logMap;
+                if (log is Map) {
+                  logMap = Map<String, dynamic>.from(log);
+                } else {
+                  logMap = {'error': 'Invalid log format'};
+                }
 
-        // Update duration timer based on punch status
-        _updateDurationTimer();
+                final formattedLog = {
+                  'id': logMap['id'],
+                  'date': logMap['date']?.toString() ?? '',
+                  'punchType': logMap['punchType']?.toString() ?? 'PunchOut',
+                  'recordType': logMap['recordType']?.toString() ?? 'Manual',
+                  'lat': logMap['lat'],
+                  'lon': logMap['lon'],
+                };
 
-        // Update duration timer based on punch status
-        _updateDurationTimer();
+                print('   Formatted log $i: $formattedLog');
+                formattedLogs.add(formattedLog);
+              }
 
-        print(
-          'Punch status - Punched In: $hasPunchedIn, Punched Out: $hasPunchedOut, Current Status: $_isPunchedIn',
-        );
-      } else {
-        // No attendance record for today, employee hasn't punched in
-        setState(() {
-          _isPunchedIn = false;
-        });
-        print('No attendance record for today, employee can punch in');
+              print(
+                '📦 Storing ${formattedLogs.length} attendance logs from attendance record',
+              );
+              for (var i = 0; i < formattedLogs.length; i++) {
+                print('   Log $i: ${formattedLogs[i]}');
+              }
+
+              // Store logs first
+              setState(() {
+                _attendanceLogs = formattedLogs;
+              });
+
+              // Wait a moment for setState to complete, then verify
+              await Future.delayed(const Duration(milliseconds: 100));
+
+              // Verify logs are stored
+              print(
+                '✅ Verification - Attendance logs count after setState: ${_attendanceLogs.length}',
+              );
+              if (_attendanceLogs.isNotEmpty) {
+                print('✅ Verification - Last log: ${_attendanceLogs.last}');
+              }
+
+              // Update timer based on last punch type
+              _updateDurationTimer();
+
+              // Get last punch type for display
+              final lastPunchType = _getLastPunchType();
+              print('✅ Last punch type from logs: $lastPunchType');
+
+              return; // Exit early since we got logs from attendance record
+            } else {
+              print('⚠️ logsArray is null, empty, or not a List');
+            }
+          }
+
+          // If it's the paginated format (content.data)
+          if (content.containsKey('data') && content['data'] is List) {
+            final dataList = content['data'] as List;
+            print(
+              '📊 Found attendance records in data array: ${dataList.length} records',
+            );
+
+            if (dataList.isNotEmpty) {
+              final todayAttendance = dataList.first;
+              // Check if this record has attendanceLogsId
+              if (todayAttendance.containsKey('attendanceLogsId')) {
+                final logsArray = todayAttendance['attendanceLogsId'];
+                if (logsArray != null && logsArray is List) {
+                  final formattedLogs = logsArray.map((log) {
+                    return {
+                      'id': log['id'],
+                      'date': log['date'],
+                      'punchType': log['punchType'],
+                      'recordType': log['recordType'],
+                      'lat': log['lat'],
+                      'lon': log['lon'],
+                    };
+                  }).toList();
+
+                  setState(() {
+                    _attendanceLogs = formattedLogs;
+                  });
+
+                  _updateDurationTimer();
+
+                  print(
+                    '✅ Loaded ${formattedLogs.length} logs from paginated response',
+                  );
+                  return;
+                }
+              }
+            }
+          }
+        }
       }
+
+      // Fallback: Try fetching logs by date if not found in attendance response
+      final today = DateTime.now().toIso8601String().split(
+        'T',
+      )[0]; // YYYY-MM-DD format
+      print('📅 Fetching attendance logs separately for date: $today');
+      await _fetchAttendanceLogsByEmployeeAndDate(today);
     } catch (e) {
-      print('Error fetching today\'s attendance: $e');
-      // On error, assume not punched in
-      setState(() {
-        _isPunchedIn = false;
-      });
+      print('❌ Error fetching today\'s attendance: $e');
+      print('❌ Stack trace: ${StackTrace.current}');
     }
   }
 
   Future<void> _fetchGeofenceConfig() async {
-    if (_employeeId == null) return;
+    print(
+      '🔍 _fetchGeofenceConfig called - Employee ID: $_employeeId, Tenant ID: $_tenantId',
+    );
+
+    if (_employeeId == null) {
+      print('⚠️ Cannot fetch geofence - Employee ID is null');
+      return;
+    }
 
     try {
       print('🌐 Fetching geofence configuration for employee: $_employeeId');
+      print('🔍 Tenant ID: $_tenantId');
 
-      final success = await _geofenceService.fetchGeofenceConfigFromServer(
+      // First check if geofence was already loaded (e.g., from shared preferences)
+      final existingGeofence = _geofenceService.getCurrentGeofence();
+      if (existingGeofence != null) {
+        print('✅ Found existing geofence config in service');
+        print('🔍 Geofence type: ${_geofenceService.getCurrentGeofenceType()}');
+
+        // Still refresh status with current location
+        if (_currentPosition != null) {
+          await _refreshGeofenceStatus();
+        }
+        return;
+      }
+
+      // Try to fetch from server using the same method as GeofenceMapWidget
+      // First try employee-specific endpoint
+      bool success = await _geofenceService.fetchGeofenceConfigFromServer(
         employeeId: _employeeId!,
         tenantId: _tenantId,
       );
 
+      // If that fails, try tenant-based endpoint (same as GeofenceMapWidget)
+      if (!success) {
+        print(
+          '⚠️ Employee-specific geofence fetch failed, trying tenant-based...',
+        );
+        try {
+          final response = await widget.apiService.getGeofencingConfig(
+            tenantId: _tenantId,
+            branchId: null,
+          );
+
+          if (response['error'] == false && response['content'] != null) {
+            final result = response['content']['result'];
+            if (result != null &&
+                result['data'] != null &&
+                result['data'].isNotEmpty) {
+              final geofenceData = result['data'][0];
+              print('✅ Got geofence config from tenant endpoint');
+
+              // Load it into GeofenceService
+              if (geofenceData['boundary'] != null &&
+                  geofenceData['boundary']['type'] == 'Polygon') {
+                success = await _geofenceService.setupPolygonGeofence(
+                  employeeId: _employeeId!,
+                  tenantId: geofenceData['tenantId'] ?? _tenantId ?? 0,
+                  boundary: geofenceData['boundary'],
+                  geofenceId: geofenceData['id'],
+                  geofenceName: 'Office Location',
+                );
+              } else if (geofenceData['lat'] != null &&
+                  geofenceData['lon'] != null &&
+                  geofenceData['radius'] != null) {
+                success = await _geofenceService.setupGeofence(
+                  employeeId: _employeeId!,
+                  tenantId: geofenceData['tenantId'] ?? _tenantId ?? 0,
+                  latitude: geofenceData['lat']?.toDouble() ?? 0.0,
+                  longitude: geofenceData['lon']?.toDouble() ?? 0.0,
+                  radius: geofenceData['radius']?.toDouble() ?? 100.0,
+                  geofenceName: 'Office Location',
+                );
+              }
+            }
+          }
+        } catch (e) {
+          print('❌ Error fetching geofence from tenant endpoint: $e');
+        }
+      }
+
       if (success) {
-        print('✅ Geofence configuration loaded successfully');
+        print('✅ Geofence configuration loaded successfully from server');
+        // Verify geofence was actually loaded
+        final geofence = _geofenceService.getCurrentGeofence();
+        print('🔍 Geofence loaded check: ${geofence != null}');
+        print('🔍 Geofence type: ${_geofenceService.getCurrentGeofenceType()}');
+        print(
+          '🔍 Is geofencing enabled: ${_geofenceService.isGeofencingEnabled}',
+        );
+
+        // Force a widget rebuild to update button state
+        if (mounted && !_isDisposed) {
+          setState(() {
+            print('🔄 setState called after geofence load');
+          });
+        }
+
+        // Refresh geofence status after loading config
+        if (_currentPosition != null) {
+          await _refreshGeofenceStatus();
+        } else {
+          print('⚠️ No current position - cannot refresh geofence status');
+        }
       } else {
         print('⚠️ No geofence configuration found for this employee');
+        print(
+          '🔍 Double-checking: geofence = ${_geofenceService.getCurrentGeofence() != null}',
+        );
+        print('🔍 Geofence type: ${_geofenceService.getCurrentGeofenceType()}');
       }
     } catch (e) {
       print('❌ Error fetching geofence configuration: $e');
+      print('❌ Stack trace: ${StackTrace.current}');
     }
   }
 
   Future<void> _fetchAttendanceLogsByEmployeeAndDate(String date) async {
-    if (_employeeId == null) return;
+    if (_employeeId == null) {
+      print('⚠️ Cannot fetch attendance logs - Employee ID is null');
+      return;
+    }
 
     try {
       print(
-        'Fetching attendance logs for employee: $_employeeId on date: $date',
+        '🔄 Fetching attendance logs for employee: $_employeeId, tenant: $_tenantId, date: $date',
       );
       final attendanceLogs = await widget.apiService
           .getAttendanceLogsByEmployeeAndDate(
@@ -261,42 +514,75 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
             date: date,
           );
 
-      print('Attendance logs response: $attendanceLogs');
+      print('📥 Attendance logs API response: $attendanceLogs');
 
-      // Process the attendance logs to determine punch status
+      // Process the attendance logs - check both response formats
+      List<dynamic> logs = [];
+
       if (attendanceLogs['content'] != null &&
-          attendanceLogs['content']['data'] != null &&
-          attendanceLogs['content']['data'] is List) {
-        final logs = attendanceLogs['content']['data'] as List;
-        print('Found ${logs.length} attendance logs');
+          attendanceLogs['content'] is Map) {
+        final content = attendanceLogs['content'] as Map;
+
+        // Check if logs are in content.attendanceLogsId (direct format)
+        if (content.containsKey('attendanceLogsId') &&
+            content['attendanceLogsId'] is List) {
+          logs = content['attendanceLogsId'] as List;
+          print('✅ Found ${logs.length} logs in content.attendanceLogsId');
+        }
+        // Check if logs are in content.data (paginated format)
+        else if (content.containsKey('data') && content['data'] is List) {
+          final dataList = content['data'] as List;
+          if (dataList.isNotEmpty && dataList.first is Map) {
+            final firstRecord = dataList.first as Map;
+            if (firstRecord.containsKey('attendanceLogsId') &&
+                firstRecord['attendanceLogsId'] is List) {
+              logs = firstRecord['attendanceLogsId'] as List;
+              print(
+                '✅ Found ${logs.length} logs in content.data[0].attendanceLogsId',
+              );
+            }
+          }
+        }
+      }
+
+      if (logs.isNotEmpty) {
+        // Convert logs to our format
+        final formattedLogs = logs.map<Map<String, dynamic>>((log) {
+          final logMap = log is Map
+              ? log
+              : Map<String, dynamic>.from(log as dynamic);
+          return {
+            'id': logMap['id'],
+            'date': logMap['date'],
+            'punchType': logMap['punchType'],
+            'recordType': logMap['recordType'] ?? 'Manual',
+            'lat': logMap['lat'],
+            'lon': logMap['lon'],
+          };
+        }).toList();
 
         // Store the logs for display
-        setState(() {
-          _attendanceLogs = List<Map<String, dynamic>>.from(logs);
-        });
-
-        // Analyze the logs to determine current punch status
-        bool hasPunchedIn = false;
-        bool hasPunchedOut = false;
-
-        for (var log in logs) {
-          if (log['punchType'] == 'PunchIn') {
-            hasPunchedIn = true;
-          } else if (log['punchType'] == 'PunchOut') {
-            hasPunchedOut = true;
-          }
+        print('📦 Storing ${formattedLogs.length} attendance logs');
+        for (var i = 0; i < formattedLogs.length; i++) {
+          print('   Log $i: ${formattedLogs[i]}');
         }
 
         setState(() {
-          _isPunchedIn = hasPunchedIn && !hasPunchedOut;
+          _attendanceLogs = formattedLogs;
         });
+
+        // Get last punch type
+        final lastPunchType = _getLastPunchType();
+        print('✅ Stored logs. Last punch type: $lastPunchType');
+        print('🔍 Last log details: ${formattedLogs.last}');
 
         // Update duration timer based on punch status
         _updateDurationTimer();
-
-        print(
-          'Log analysis - Punched In: $hasPunchedIn, Punched Out: $hasPunchedOut, Current Status: $_isPunchedIn',
-        );
+      } else {
+        print('⚠️ No logs found in response');
+        setState(() {
+          _attendanceLogs = [];
+        });
       }
     } catch (e) {
       print('Error fetching attendance logs: $e');
@@ -346,12 +632,54 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
         _currentPosition = position;
         _isLoading = false;
       });
+
+      // Refresh geofence status with initial position
+      if (_currentPosition != null) {
+        await _refreshGeofenceStatus();
+      }
+
+      // Start continuous location tracking
+      _startLocationTracking();
     } catch (e) {
       setState(() {
         _error = 'Error getting location: $e';
         _isLoading = false;
       });
     }
+  }
+
+  // Start continuous location tracking for geofence monitoring
+  void _startLocationTracking() {
+    // Cancel existing subscription if any
+    _positionStreamSubscription?.cancel();
+
+    // Set up continuous location stream
+    _positionStreamSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10, // Update every 10 meters
+          ),
+        ).listen(
+          (Position position) {
+            if (!mounted || _isDisposed) return;
+
+            setState(() {
+              _currentPosition = position;
+            });
+
+            // Refresh geofence status with new location
+            // The stream listener will automatically update _isInsideGeofence when status changes
+            _geofenceService.refreshGeofenceStatus(position).catchError((
+              error,
+            ) {
+              print('❌ Error refreshing geofence: $error');
+            });
+          },
+          onError: (error) {
+            print('❌ Location stream error: $error');
+          },
+        );
   }
 
   Future<void> _handlePunchIn() async {
@@ -397,18 +725,16 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
         lat: _currentPosition!.latitude,
         lon: _currentPosition!.longitude,
         dateWithTime: now.toIso8601String(),
+        punchType: "PunchIn",
       );
 
       if (response['error'] == false) {
-        setState(() {
-          _isPunchedIn = true;
-        });
+        // Refresh attendance logs to get the latest status
+        final today = DateTime.now().toIso8601String().split('T')[0];
+        await _fetchAttendanceLogsByEmployeeAndDate(today);
 
-        // Start duration timer for real-time updates
+        // Update timer based on new status
         _updateDurationTimer();
-
-        // Refresh attendance status after successful punch in
-        await _fetchTodayAttendance();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -477,19 +803,17 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
         lat: _currentPosition!.latitude,
         lon: _currentPosition!.longitude,
         dateWithTime: now.toIso8601String(),
+        punchType: "PunchOut",
         // tenantId: _tenantId!,
       );
 
       if (response['error'] == false) {
-        setState(() {
-          _isPunchedIn = false;
-        });
+        // Refresh attendance logs to get the latest status
+        final today = DateTime.now().toIso8601String().split('T')[0];
+        await _fetchAttendanceLogsByEmployeeAndDate(today);
 
         // Stop duration timer
         _updateDurationTimer();
-
-        // Refresh attendance status after successful punch out
-        await _fetchTodayAttendance();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -517,332 +841,507 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.primaryColor,
-        borderRadius: const BorderRadius.all(Radius.circular(16)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.all(Radius.circular(16)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 1,
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Main Punch Card
-          Container(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                // Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            children: [
+              // Main Punch Card
+              Container(
+                padding: const EdgeInsets.all(24),
+                child: Column(
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    // Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.access_time,
-                              color: Colors.grey[800],
-                              size: 20,
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time,
+                                  color: const Color(0xFF1E3A5F), // Dark blue
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Attendance',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(height: 4),
                             Text(
-                              'Attendance',
+                              'Timezone: ${_getCurrentTimezone()}',
                               style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[800],
+                                fontSize: 12,
+                                color: Colors.grey[500],
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Timezone: ${_getCurrentTimezone()}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[500],
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getLastPunchType() == 'PunchIn'
+                                ? const Color(
+                                    0xFFC8E6C9,
+                                  ) // Light green background
+                                : Colors.grey[100],
+                            borderRadius: BorderRadius.circular(20),
+                            border: _getLastPunchType() == 'PunchIn'
+                                ? Border.all(
+                                    color: const Color(0xFF81C784),
+                                    width: 1,
+                                  )
+                                : null,
+                          ),
+                          child: Text(
+                            _getLastPunchType() == 'PunchIn'
+                                ? 'Working'
+                                : 'Not Punched',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _getLastPunchType() == 'PunchIn'
+                                  ? const Color(0xFF2E7D32) // Dark green text
+                                  : Colors.grey[800],
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
+
+                    const SizedBox(height: 24),
+
+                    // Working Hours Display
+                    Center(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          // Responsive size based on available width
+                          final maxWidth = constraints.maxWidth;
+                          final screenWidth = MediaQuery.of(context).size.width;
+                          final isMobile = screenWidth <= 768;
+
+                          // Larger minimum size for mobile to accommodate text
+                          final circleSize = isMobile
+                              ? (maxWidth * 0.45).clamp(140.0, 180.0)
+                              : (maxWidth * 0.4).clamp(120.0, 180.0);
+
+                          // Calculate text sizes with better mobile support
+                          final titleSize = circleSize < 150
+                              ? (circleSize * 0.09).clamp(10.0, 14.0)
+                              : (circleSize * 0.1).clamp(12.0, 16.0);
+                          final durationSize = circleSize < 150
+                              ? (circleSize * 0.12).clamp(14.0, 20.0)
+                              : (circleSize * 0.15).clamp(18.0, 24.0);
+                          final startTimeSize = circleSize < 150
+                              ? (circleSize * 0.07).clamp(8.0, 11.0)
+                              : (circleSize * 0.08).clamp(10.0, 13.0);
+
+                          // Adjust spacing for smaller circles
+                          final spacing1 = circleSize < 150
+                              ? circleSize * 0.04
+                              : circleSize * 0.06;
+                          final spacing2 = circleSize < 150
+                              ? circleSize * 0.02
+                              : circleSize * 0.03;
+
+                          // Padding to ensure text stays inside circle
+                          final innerPadding = circleSize * 0.1;
+
+                          return Container(
+                            width: circleSize,
+                            height: circleSize,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(
+                                  0xFFFFE0B2,
+                                ), // Light orange/beige
+                                width: 4,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.grey.withOpacity(0.15),
+                                  spreadRadius: 2,
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Padding(
+                              padding: EdgeInsets.all(innerPadding),
+                              child: Center(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Production Hours',
+                                        style: TextStyle(
+                                          fontSize: titleSize,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.grey[500],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      SizedBox(height: spacing1),
+                                      Text(
+                                        _calculateWorkingDuration(),
+                                        style: TextStyle(
+                                          fontSize: durationSize,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      SizedBox(height: spacing2),
+                                      Text(
+                                        'Start: ${_getStartTime()}',
+                                        style: TextStyle(
+                                          fontSize: startTimeSize,
+                                          fontWeight: FontWeight.w400,
+                                          color: Colors.grey[600],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                      decoration: BoxDecoration(
-                        color: _isPunchedIn
-                            ? Colors.green[100]
-                            : Colors.grey[100],
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        _isPunchedIn ? 'Working' : 'Not Punched',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _isPunchedIn
-                              ? Colors.green[800]
-                              : Colors.grey[800],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Error Display
+                    if (_error != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.red[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red[200]!),
+                        ),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
+
+                    // Punch Status Display
+                    Builder(
+                      builder: (context) {
+                        final lastPunchType = _getLastPunchType();
+                        if (lastPunchType == 'PunchIn') {
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green[600],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Punched In at ${_getFormattedPunchInTime()}',
+                                  style: TextStyle(
+                                    color: Colors.green[700],
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey[200]!),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                color: Colors.grey[600],
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Not Punched',
+                                style: TextStyle(
+                                  color: Colors.grey[700],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+
+                    // Geofence restriction message (if outside boundary and geofence is configured)
+                    Builder(
+                      builder: (context) {
+                        // Get fresh status directly from service
+                        final serviceInsideStatus =
+                            _geofenceService.isInsideGeofenceStatus;
+                        final geofenceConfig = _geofenceService
+                            .getCurrentGeofence();
+                        final hasGeofenceConfig = geofenceConfig != null;
+
+                        // Additional check: if service has geofencing enabled, treat as configured
+                        final serviceGeofenceEnabled =
+                            _geofenceService.isGeofencingEnabled;
+                        final isGeofenceConfigured =
+                            hasGeofenceConfig || serviceGeofenceEnabled;
+
+                        final isOutsideGeofence =
+                            isGeofenceConfigured && !serviceInsideStatus;
+
+                        if (isOutsideGeofence) {
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: AppTheme.warningColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: AppTheme.warningColor.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.location_off,
+                                  color: AppTheme.warningColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'You are outside the office area. Please come inside to punch in/out.',
+                                    style: TextStyle(
+                                      color: AppTheme.warningColor,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+
+                    // Punch Button
+                    Builder(
+                      builder: (context) {
+                        final lastPunchType = _getLastPunchType();
+                        final shouldShowPunchOut = lastPunchType == 'PunchIn';
+
+                        // Get fresh status directly from service (most reliable)
+                        final serviceInsideStatus =
+                            _geofenceService.isInsideGeofenceStatus;
+
+                        // CRITICAL: Check geofence configuration
+                        // Use the geofence display status as the source of truth
+                        // If the geofence status display is showing, geofence is configured
+                        final geofence = _geofenceService.getCurrentGeofence();
+                        final serviceHasGeofence =
+                            _geofenceService.isGeofencingEnabled;
+                        final geofenceType = _geofenceService
+                            .getCurrentGeofenceType();
+
+                        // Check if geofence exists by looking at the UI display condition
+                        // The geofence status display section shows when geofence exists
+                        final hasGeofenceConfig =
+                            geofence != null ||
+                            serviceHasGeofence ||
+                            geofenceType != 'None';
+
+                        // Sync widget state with service if different
+                        if (mounted &&
+                            _isInsideGeofence != serviceInsideStatus) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted && !_isDisposed) {
+                              setState(() {
+                                _isInsideGeofence = serviceInsideStatus;
+                              });
+                            }
+                          });
+                        }
+
+                        // If geofence is configured and user is outside, disable button
+                        final isButtonDisabled =
+                            _isLoading ||
+                            (hasGeofenceConfig && !serviceInsideStatus);
+
+                        return SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: isButtonDisabled
+                                ? null
+                                : (shouldShowPunchOut
+                                      ? _handlePunchOut
+                                      : _handlePunchIn),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(
+                                0xFF1E3A5F,
+                              ), // Dark blue
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 0,
+                              disabledBackgroundColor: Colors.grey[300],
+                              disabledForegroundColor: Colors.grey[600],
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    _isLoading
+                                        ? (shouldShowPunchOut
+                                              ? "Punching Out..."
+                                              : "Punching In...")
+                                        : (shouldShowPunchOut
+                                              ? "Punch Out"
+                                              : "Punch In"),
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: isButtonDisabled
+                                          ? Colors.grey[600]
+                                          : Colors.white,
+                                    ),
+                                  ),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
+              ),
 
-                const SizedBox(height: 24),
+              // Attendance Logs Section
+              if (_attendanceLogs.isNotEmpty) _buildAttendanceLogsSection(),
 
-                // Working Hours Display
-                Center(
-                  child: Container(
-                    width: 128,
-                    height: 128,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.orange[100]!, width: 4),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.2),
-                          spreadRadius: 2,
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Total Hours',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _calculateWorkingDuration(),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Error Display
-                if (_error != null)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.red[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red[200]!),
-                    ),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: Colors.red[700], fontSize: 14),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-
-                // Geofence Status Display with improved colors
-                if (_geofenceService.getCurrentGeofence() != null)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: AppTheme.getGeofenceStatusLightColor(
-                        _isInsideGeofence,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppTheme.getGeofenceStatusColor(
-                          _isInsideGeofence,
-                        ).withOpacity(0.3),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _isInsideGeofence
-                              ? Icons.location_on
-                              : Icons.location_off,
-                          color: AppTheme.getGeofenceStatusColor(
-                            _isInsideGeofence,
-                          ),
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _isInsideGeofence
-                              ? 'Inside Office Area'
-                              : 'Outside Office Area',
-                          style: TextStyle(
-                            color: AppTheme.getGeofenceStatusColor(
-                              _isInsideGeofence,
-                            ),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () => _geofenceService
-                              .showGeofenceStatusDialog(context),
-                          child: Icon(
-                            Icons.info_outline,
-                            color: AppTheme.textSecondary,
-                            size: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                // Punch Status Display
-                if (_isPunchedIn)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.green[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green[200]!),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.check_circle,
-                          color: Colors.green[600],
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Punched In at ${_getFormattedPunchInTime()}',
-                          style: TextStyle(
-                            color: Colors.green[700],
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[200]!),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.access_time,
-                          color: Colors.grey[600],
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Not Punched',
-                          style: TextStyle(
-                            color: Colors.grey[700],
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                // Punch Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isLoading
-                        ? null
-                        : (_isPunchedIn ? _handlePunchOut : _handlePunchIn),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
-                            ),
-                          )
-                        : Text(
-                            _isLoading
-                                ? (_isPunchedIn
-                                      ? "Punching Out..."
-                                      : "Punching In...")
-                                : (_isPunchedIn ? "Punch Out" : "Punch In"),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
-            ),
+              // Map Section
+              if (_hasLocationData()) _buildMapSection(),
+            ],
           ),
-
-          // Attendance Logs Section
-          if (_attendanceLogs.isNotEmpty) _buildAttendanceLogsSection(),
-
-          // Map Section
-          if (_hasLocationData()) _buildMapSection(),
-        ],
+        ),
       ),
     );
   }
 
   String _getCurrentTimezone() {
-    final now = DateTime.now();
-    final offset = now.timeZoneOffset;
-    final hours = offset.inHours;
-    final minutes = offset.inMinutes % 60;
-    final sign = hours >= 0 ? '+' : '';
-    return 'UTC$sign${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
+    try {
+      final now = DateTime.now();
+      final offset = now.timeZoneOffset;
+      final totalMinutes = offset.inMinutes;
+
+      // Check if it's IST (UTC+5:30) - 5 hours 30 minutes = 330 minutes
+      if (totalMinutes == 330 ||
+          (offset.inHours == 5 && offset.inMinutes % 60 == 30)) {
+        return 'Asia/Calcutta';
+      }
+
+      // For other timezones, return UTC offset format
+      final hours = offset.inHours;
+      final minutes = offset.inMinutes % 60;
+      final sign = hours >= 0 ? '+' : '';
+      return 'UTC$sign${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
+    } catch (e) {
+      // Final fallback - assume IST for Indian users
+      return 'Asia/Calcutta';
+    }
+  }
+
+  // Helper method to parse date from API format "YYYY-MM-DD HH:mm:ss"
+  DateTime? _parseAttendanceDate(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return null;
+
+    try {
+      // Try to parse ISO format first
+      final isoParsed = DateTime.tryParse(dateStr);
+      if (isoParsed != null) return isoParsed;
+
+      // Try to parse "YYYY-MM-DD HH:mm:ss" format
+      if (dateStr.contains(' ') && dateStr.length >= 19) {
+        final parts = dateStr.split(' ');
+        if (parts.length == 2) {
+          final datePart = parts[0]; // YYYY-MM-DD
+          final timePart = parts[1]; // HH:mm:ss
+          final dateTimeStr = '${datePart}T$timePart';
+          return DateTime.tryParse(dateTimeStr);
+        }
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error parsing date: $dateStr, error: $e');
+      return null;
+    }
   }
 
   String _calculateWorkingDuration() {
@@ -854,9 +1353,9 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
 
     for (var log in _attendanceLogs) {
       if (log['punchType'] == 'PunchIn') {
-        punchInTime = DateTime.tryParse(log['date'] ?? '');
+        punchInTime = _parseAttendanceDate(log['date']?.toString());
       } else if (log['punchType'] == 'PunchOut' && punchInTime != null) {
-        final punchOutTime = DateTime.tryParse(log['date'] ?? '');
+        final punchOutTime = _parseAttendanceDate(log['date']?.toString());
         if (punchOutTime != null) {
           totalDuration += punchOutTime.difference(punchInTime);
           punchInTime = null;
@@ -864,16 +1363,75 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
       }
     }
 
-    // If currently punched in, add current session
-    if (_isPunchedIn && punchInTime != null) {
-      totalDuration += DateTime.now().difference(punchInTime);
+    // If last log is PunchIn, add current session duration
+    if (_getLastPunchType() == 'PunchIn') {
+      // Find the latest punch in time
+      DateTime? latestPunchIn;
+      for (var log in _attendanceLogs.reversed) {
+        if (log['punchType'] == 'PunchIn') {
+          latestPunchIn = _parseAttendanceDate(log['date']?.toString());
+          break;
+        }
+      }
+      if (latestPunchIn != null) {
+        totalDuration += DateTime.now().difference(latestPunchIn);
+      }
     }
 
     final hours = totalDuration.inHours;
     final minutes = totalDuration.inMinutes % 60;
     final seconds = totalDuration.inSeconds % 60;
 
+    // Format as HH:MM:SS with leading zeros
     return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  // Get the start time (first PunchIn) for display
+  String _getStartTime() {
+    if (_attendanceLogs.isEmpty) return '--:--:--';
+
+    // Find the first punch in time
+    for (var log in _attendanceLogs) {
+      if (log['punchType'] == 'PunchIn') {
+        final dateTime = _parseAttendanceDate(log['date']?.toString());
+        if (dateTime != null) {
+          return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}';
+        }
+      }
+    }
+
+    return '--:--:--';
+  }
+
+  String _formatDateForDisplay(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  // Get the last punch type from attendance logs
+  String _getLastPunchType() {
+    if (_attendanceLogs.isEmpty) {
+      return 'PunchOut';
+    }
+
+    // Get the last log entry
+    final lastLog = _attendanceLogs.last;
+    final punchType = lastLog['punchType']?.toString() ?? 'PunchOut';
+
+    return punchType;
   }
 
   String _getFormattedPunchInTime() {
@@ -882,7 +1440,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
     // Find the latest punch in time
     for (var log in _attendanceLogs.reversed) {
       if (log['punchType'] == 'PunchIn') {
-        final dateTime = DateTime.tryParse(log['date'] ?? '');
+        final dateTime = _parseAttendanceDate(log['date']?.toString());
         if (dateTime != null) {
           return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}';
         }
@@ -916,20 +1474,14 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor,
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(0),
-                  bottomRight: Radius.circular(0),
-                ),
-              ),
+              decoration: const BoxDecoration(color: Colors.white),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Attendance Logs',
                     style: TextStyle(
-                      color: Colors.grey[700],
+                      color: Colors.grey[800],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -958,7 +1510,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                   columns: const [
                     DataColumn(
                       label: Text(
-                        'Date',
+                        'DATE',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -967,7 +1519,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                     ),
                     DataColumn(
                       label: Text(
-                        'Type',
+                        'TYPE',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -976,7 +1528,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                     ),
                     DataColumn(
                       label: Text(
-                        'Record',
+                        'RECORD',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -985,7 +1537,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                     ),
                     DataColumn(
                       label: Text(
-                        'Time',
+                        'TIME',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -994,9 +1546,13 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                     ),
                   ],
                   rows: _attendanceLogs.map((log) {
-                    final dateTime = DateTime.tryParse(log['date'] ?? '');
+                    final dateTime = _parseAttendanceDate(
+                      log['date']?.toString(),
+                    );
                     final formattedDate = dateTime != null
-                        ? '${dateTime.day}/${dateTime.month}/${dateTime.year}'
+                        ? _formatDateForDisplay(
+                            dateTime,
+                          ) // Format as "Oct 28, 2025"
                         : 'N/A';
                     final formattedTime = dateTime != null
                         ? '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}'
@@ -1057,20 +1613,13 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor,
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(0),
-                  bottomRight: Radius.circular(0),
-                ),
-              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'View Map ${_selectedLogIndex != null ? '(Selected Location)' : '(Latest Location)'}',
                     style: TextStyle(
-                      color: Colors.grey[700],
+                      color: Colors.grey[800],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1251,7 +1800,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
   void _updateDurationTimer() {
     _durationTimer?.cancel();
 
-    if (_isPunchedIn) {
+    if (_getLastPunchType() == 'PunchIn') {
       // Start timer to update duration every second
       _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (mounted) {
@@ -1265,7 +1814,9 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _durationTimer?.cancel();
+    _positionStreamSubscription?.cancel();
     super.dispose();
   }
 }

@@ -27,6 +27,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   bool _isGeofencingSupported = false;
   late AnimationController _sidebarController;
   late Animation<double> _sidebarAnimation;
+  bool _hasLoggedEmployee = false; // one-time employee data log
 
   @override
   void initState() {
@@ -47,16 +48,64 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     _initializeServices();
     _loadEmployeeData();
     _initializeGeofencing();
+
+    // After first frame, attach a listener to log employee data once when loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final employeeProvider = Provider.of<EmployeeProvider>(
+        context,
+        listen: false,
+      );
+      employeeProvider.addListener(_logEmployeeOnce);
+      _ensureEmployeeLoaded();
+      // Also watch AuthProvider to fetch once user becomes available
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      authProvider.addListener(_ensureEmployeeLoaded);
+    });
   }
 
   @override
   void dispose() {
+    // Remove listener if provider is available
+    try {
+      final employeeProvider = Provider.of<EmployeeProvider>(
+        context,
+        listen: false,
+      );
+      employeeProvider.removeListener(_logEmployeeOnce);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      authProvider.removeListener(_ensureEmployeeLoaded);
+    } catch (_) {
+      // ignore: avoid_print
+      print('Employee provider not available during dispose');
+    }
     _geofenceService.dispose();
     if (_sidebarController.isAnimating || _sidebarController.isCompleted) {
       _sidebarController.stop();
     }
     _sidebarController.dispose();
     super.dispose();
+  }
+
+  // One-time logger for employee data once it's available
+  void _logEmployeeOnce() {
+    final employeeProvider = Provider.of<EmployeeProvider>(
+      context,
+      listen: false,
+    );
+    if (!_hasLoggedEmployee && employeeProvider.employee != null) {
+      final e = employeeProvider.employee!;
+      _hasLoggedEmployee = true;
+      // ignore: avoid_print
+      print(
+        'Employee Loaded: '
+        '{id: ${e.id}, '
+        'name: ${e.fullName}, '
+        'email: ${e.email}, '
+        'empCode: ${e.empCode}, '
+        'department: ${e.departmentModel?.name}, '
+        'designation: ${e.designationModel?.name}}',
+      );
+    }
   }
 
   void _toggleSidebar() {
@@ -192,6 +241,22 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     }
   }
 
+  // Ensure employee data is fetched when auth user becomes available
+  void _ensureEmployeeLoaded() {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final employeeProvider = Provider.of<EmployeeProvider>(
+        context,
+        listen: false,
+      );
+      if (employeeProvider.employee == null &&
+          authProvider.user?.employeeId != null &&
+          !employeeProvider.isLoading) {
+        employeeProvider.fetchEmployeeById(authProvider.user!.employeeId!);
+      }
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width <= 768;
@@ -289,9 +354,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth <= 768;
 
-    // Responsive padding
+    // Responsive padding - reduced to prevent system UI overlap
     final horizontalPadding = isMobile ? 12.0 : 20.0;
-    final verticalPadding = isMobile ? 12.0 : 16.0;
+    final verticalPadding = isMobile ? 8.0 : 12.0;
 
     // Responsive icon sizes
     final iconSize = isMobile ? 18.0 : 24.0;
@@ -301,172 +366,89 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     final spacing = isMobile ? 8.0 : 16.0;
     final titleSpacing = isMobile ? 8.0 : 12.0;
 
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: horizontalPadding,
-        vertical: verticalPadding,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-            spreadRadius: 0,
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Menu Button with improved design
-          Container(
-            decoration: BoxDecoration(
-              color: AppTheme.backgroundColor,
-              borderRadius: BorderRadius.circular(12),
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: verticalPadding,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+              spreadRadius: 0,
             ),
-            child: IconButton(
-              icon: Icon(
-                Icons.menu,
-                color: AppTheme.primaryColor,
-                size: menuIconSize,
+          ],
+        ),
+        child: Row(
+          children: [
+            // Menu Button - Hamburger icon
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.backgroundColor,
+                borderRadius: BorderRadius.circular(12),
               ),
-              onPressed: _toggleSidebar,
-              padding: EdgeInsets.all(isMobile ? 8 : 12),
-              constraints: BoxConstraints(
-                minWidth: isMobile ? 36 : 48,
-                minHeight: isMobile ? 36 : 48,
-              ),
-            ),
-          ),
-
-          SizedBox(width: spacing),
-
-          // Title with icon
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  padding: EdgeInsets.all(isMobile ? 6 : 8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppTheme.primaryColor,
-                        AppTheme.primaryColor.withOpacity(0.8),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.dashboard_rounded,
-                    color: Colors.white,
-                    size: iconSize,
-                  ),
+              child: IconButton(
+                icon: Icon(
+                  Icons.menu,
+                  color: AppTheme.primaryColor,
+                  size: menuIconSize,
                 ),
-                SizedBox(width: titleSpacing),
-                Flexible(
-                  child: Text(
-                    _getPageTitle(),
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
-                      letterSpacing: 0.5,
-                      fontSize: isMobile ? 16 : 20,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                onPressed: _toggleSidebar,
+                padding: EdgeInsets.all(isMobile ? 8 : 12),
+                constraints: BoxConstraints(
+                  minWidth: isMobile ? 36 : 48,
+                  minHeight: isMobile ? 36 : 48,
                 ),
-              ],
-            ),
-          ),
-
-          // User Info with enhanced design
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 8 : 12,
-              vertical: isMobile ? 4 : 6,
-            ),
-            decoration: BoxDecoration(
-              color: AppTheme.backgroundColor,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: AppTheme.primaryColor.withOpacity(0.1),
-                width: 1,
               ),
             ),
-            child: Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        AppTheme.primaryColor,
-                        AppTheme.primaryColor.withOpacity(0.8),
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+
+            SizedBox(width: spacing),
+
+            // Title with icon
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(isMobile ? 6 : 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppTheme.primaryColor,
+                          AppTheme.primaryColor.withOpacity(0.8),
+                        ],
                       ),
-                    ],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.dashboard_rounded,
+                      color: Colors.white,
+                      size: iconSize,
+                    ),
                   ),
-                  child: CircleAvatar(
-                    radius: isMobile ? 14 : 18,
-                    backgroundColor: Colors.transparent,
+                  SizedBox(width: titleSpacing),
+                  Flexible(
                     child: Text(
-                      authProvider.user?.firstName
-                              .substring(0, 1)
-                              .toUpperCase() ??
-                          'U',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: isMobile ? 14 : 16,
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(width: isMobile ? 6 : 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      authProvider.user?.fullName ?? 'User',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                        fontSize: isMobile ? 12 : 14,
-                      ),
+                      _getPageTitle(),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                            letterSpacing: 0.5,
+                            fontSize: isMobile ? 16 : 20,
+                          ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isMobile ? 6 : 8,
-                        vertical: isMobile ? 1 : 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        authProvider.user?.role?.name ?? 'Employee',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.primaryColor,
-                          fontWeight: FontWeight.w500,
-                          fontSize: isMobile ? 9 : 10,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -487,15 +469,75 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   }
 
   Widget _buildDashboardContent(EmployeeProvider employeeProvider) {
+    print('Employee Provider: ${employeeProvider}');
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Profile Card
-          if (employeeProvider.employee != null)
+          // Profile Card or loading/error placeholder
+          if (employeeProvider.employee != null) ...[
+            // Log employee data to console safely during build
+            Builder(
+              builder: (_) {
+                final e = employeeProvider.employee!;
+                // ignore: avoid_print
+                print(
+                  'Employee Provider: '
+                  '{id: ${e.id}, '
+                  'name: ${e.fullName}, '
+                  'email: ${e.email}, '
+                  'empCode: ${e.empCode}, '
+                  'department: ${e.departmentModel?.name}, '
+                  'designation: ${e.designationModel?.name}}',
+                );
+                return const SizedBox.shrink();
+              },
+            ),
             ProfileCard(employee: employeeProvider.employee!),
-
+          ] else ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    if (employeeProvider.isLoading) ...[
+                      const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('Loading employee...'),
+                    ] else ...[
+                      const Icon(Icons.info_outline, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          employeeProvider.error ?? 'Employee not loaded',
+                          style: TextStyle(color: AppTheme.textSecondary),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          final auth = Provider.of<AuthProvider>(
+                            context,
+                            listen: false,
+                          );
+                          if (auth.user?.employeeId != null) {
+                            employeeProvider.fetchEmployeeById(
+                              auth.user!.employeeId!,
+                            );
+                          }
+                        },
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
 
           // Punch In/Out Widget

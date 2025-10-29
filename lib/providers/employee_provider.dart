@@ -26,15 +26,28 @@ class EmployeeProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      // Debug fetch
+      // ignore: avoid_print
+      print('🔄 Fetching employee by id: $employeeId');
       final response = await _apiService.getEmployeeById(employeeId);
+      // ignore: avoid_print
+      print(
+        '📥 Employee API response error=${response.error}, message=${response.message}',
+      );
 
       if (response.error) {
         _error = response.message;
       } else {
         _employee = response.content?.result?.data;
+        // ignore: avoid_print
+        print(
+          '✅ Parsed employee: id=${_employee?.id}, name=${_employee?.fullName}',
+        );
       }
     } catch (e) {
       _error = e.toString();
+      // ignore: avoid_print
+      print('❌ fetchEmployeeById error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();

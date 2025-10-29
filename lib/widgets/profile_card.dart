@@ -9,6 +9,17 @@ class ProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Debug: log key employee fields when ProfileCard builds
+    // ignore: avoid_print
+    print(
+      'ProfileCard employee -> '
+      '{id: ${employee.id}, '
+      'name: ${employee.fullName}, '
+      'email: ${employee.email}, '
+      'empCode: ${employee.empCode}, '
+      'dept: ${employee.departmentModel?.name}, '
+      'desig: ${employee.designationModel?.name}}',
+    );
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

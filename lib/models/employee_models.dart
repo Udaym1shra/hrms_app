@@ -154,16 +154,20 @@ class Employee {
       middleName: json['middleName'],
       lastName: json['lastName'] ?? '',
       dob: json['dob'] ?? '',
-      gender: json['gender'] ?? '',
-      maritalStatus: json['maritalStatus'] ?? '',
-      bloodGroup: json['bloodGroup'] ?? '',
+      gender: json['gender'] != null ? json['gender'].toString() : '',
+      maritalStatus: json['maritalStatus'] != null
+          ? json['maritalStatus'].toString()
+          : '',
+      bloodGroup: json['bloodGroup'] != null
+          ? json['bloodGroup'].toString()
+          : '',
       workStatus: json['workStatus'] ?? '',
       confirmationStatus: json['confirmationStatus'],
       empType: json['empType'] ?? '',
       employmentType: json['employmentType'] ?? '',
       drivingLicense: json['drivingLicense'],
       experienceType: json['experienceType'],
-      religion: json['religion'],
+      religion: json['religion'] != null ? json['religion'].toString() : null,
       salary: json['salary']?.toDouble(),
       email: json['email'] ?? '',
       mobile: json['mobile'],
@@ -200,25 +204,59 @@ class Employee {
       passportExpiry: json['passportExpiry'],
       alternateEmail: json['alternateEmail'],
       officialEmail: json['officialEmail'],
-      nationality: json['nationality'],
+      nationality: json['nationality'] != null
+          ? json['nationality'].toString()
+          : null,
       referredBy: json['referredBy'],
       source: json['source'],
       remarks: json['remarks'],
       createdAt: json['createdAt'] ?? '',
       updatedAt: json['updatedAt'] ?? '',
       dateOfBirth: json['dateOfBirth'] ?? '',
-      departmentModel: json['DepartmentModel'] != null ? Department.fromJson(json['DepartmentModel']) : null,
-      designationModel: json['DesignationModel'] != null ? Designation.fromJson(json['DesignationModel']) : null,
-      masterRoleModel: json['MasterRoleModel'] != null ? Role.fromJson(json['MasterRoleModel']) : null,
-      branchModel: json['BranchModel'] != null ? Branch.fromJson(json['BranchModel']) : null,
-      companyModel: json['CompanyModel'] != null ? Company.fromJson(json['CompanyModel']) : null,
-      familyMembers: json['familyMembers'] != null ? (json['familyMembers'] as List).map((e) => FamilyMember.fromJson(e)).toList() : null,
-      educations: json['educations'] != null ? (json['educations'] as List).map((e) => Education.fromJson(e)).toList() : null,
-      experienceData: json['experienceData'] != null ? (json['experienceData'] as List).map((e) => Experience.fromJson(e)).toList() : null,
-      bankInformation: json['bankInformation'] != null ? BankInformation.fromJson(json['bankInformation']) : null,
-      emergencyContacts: json['emergencyContacts'] != null ? (json['emergencyContacts'] as List).map((e) => EmergencyContact.fromJson(e)).toList() : null,
-      reportingManager: json['reportingManager'] != null ? ReportingManager.fromJson(json['reportingManager']) : null,
-      manager: json['manager'] != null ? Manager.fromJson(json['manager']) : null,
+      departmentModel: json['DepartmentModel'] != null
+          ? Department.fromJson(json['DepartmentModel'])
+          : null,
+      designationModel: json['DesignationModel'] != null
+          ? Designation.fromJson(json['DesignationModel'])
+          : null,
+      masterRoleModel: json['MasterRoleModel'] != null
+          ? Role.fromJson(json['MasterRoleModel'])
+          : null,
+      branchModel: json['BranchModel'] != null
+          ? Branch.fromJson(json['BranchModel'])
+          : null,
+      companyModel: json['CompanyModel'] != null
+          ? Company.fromJson(json['CompanyModel'])
+          : null,
+      familyMembers: json['familyMembers'] != null
+          ? (json['familyMembers'] as List)
+                .map((e) => FamilyMember.fromJson(e))
+                .toList()
+          : null,
+      educations: json['educations'] != null
+          ? (json['educations'] as List)
+                .map((e) => Education.fromJson(e))
+                .toList()
+          : null,
+      experienceData: json['experienceData'] != null
+          ? (json['experienceData'] as List)
+                .map((e) => Experience.fromJson(e))
+                .toList()
+          : null,
+      bankInformation: json['bankInformation'] != null
+          ? BankInformation.fromJson(json['bankInformation'])
+          : null,
+      emergencyContacts: json['emergencyContacts'] != null
+          ? (json['emergencyContacts'] as List)
+                .map((e) => EmergencyContact.fromJson(e))
+                .toList()
+          : null,
+      reportingManager: json['reportingManager'] != null
+          ? ReportingManager.fromJson(json['reportingManager'])
+          : null,
+      manager: json['manager'] != null
+          ? Manager.fromJson(json['manager'])
+          : null,
     );
   }
 
@@ -237,11 +275,7 @@ class Department {
   final String name;
   final String? description;
 
-  Department({
-    required this.id,
-    required this.name,
-    this.description,
-  });
+  Department({required this.id, required this.name, this.description});
 
   factory Department.fromJson(Map<String, dynamic> json) {
     return Department(
@@ -257,11 +291,7 @@ class Designation {
   final String name;
   final String? description;
 
-  Designation({
-    required this.id,
-    required this.name,
-    this.description,
-  });
+  Designation({required this.id, required this.name, this.description});
 
   factory Designation.fromJson(Map<String, dynamic> json) {
     return Designation(
@@ -277,11 +307,7 @@ class Role {
   final String name;
   final String? description;
 
-  Role({
-    required this.id,
-    required this.name,
-    this.description,
-  });
+  Role({required this.id, required this.name, this.description});
 
   factory Role.fromJson(Map<String, dynamic> json) {
     return Role(
@@ -298,12 +324,7 @@ class Branch {
   final String? address;
   final int? tenantId;
 
-  Branch({
-    required this.id,
-    required this.name,
-    this.address,
-    this.tenantId,
-  });
+  Branch({required this.id, required this.name, this.address, this.tenantId});
 
   factory Branch.fromJson(Map<String, dynamic> json) {
     return Branch(
@@ -320,11 +341,7 @@ class Company {
   final String name;
   final String? description;
 
-  Company({
-    required this.id,
-    required this.name,
-    this.description,
-  });
+  Company({required this.id, required this.name, this.description});
 
   factory Company.fromJson(Map<String, dynamic> json) {
     return Company(
@@ -547,7 +564,9 @@ class EmployeeResponse {
       code: json['code'] ?? 0,
       error: json['error'] ?? false,
       message: json['message'] ?? '',
-      content: json['content'] != null ? EmployeeContent.fromJson(json['content']) : null,
+      content: json['content'] != null
+          ? EmployeeContent.fromJson(json['content'])
+          : null,
     );
   }
 }
@@ -555,13 +574,13 @@ class EmployeeResponse {
 class EmployeeContent {
   final EmployeeResult? result;
 
-  EmployeeContent({
-    this.result,
-  });
+  EmployeeContent({this.result});
 
   factory EmployeeContent.fromJson(Map<String, dynamic> json) {
     return EmployeeContent(
-      result: json['result'] != null ? EmployeeResult.fromJson(json['result']) : null,
+      result: json['result'] != null
+          ? EmployeeResult.fromJson(json['result'])
+          : null,
     );
   }
 }
@@ -570,15 +589,22 @@ class EmployeeResult {
   final Employee? data;
   final Map<String, dynamic>? pagination;
 
-  EmployeeResult({
-    this.data,
-    this.pagination,
-  });
+  EmployeeResult({this.data, this.pagination});
 
   factory EmployeeResult.fromJson(Map<String, dynamic> json) {
-    return EmployeeResult(
-      data: json['data'] != null ? Employee.fromJson(json['data']) : null,
-      pagination: json['pagination'],
-    );
+    // API can return either { result: { ...employee fields... } }
+    // or { result: { data: { ...employee fields... }, pagination: {...} } }
+    final dynamic dataNode = json['data'];
+    final Employee? employeeData;
+    if (dataNode is Map<String, dynamic>) {
+      employeeData = Employee.fromJson(dataNode);
+    } else if (json['id'] != null || json['firstName'] != null) {
+      // Flattened result: the result object itself is the employee
+      employeeData = Employee.fromJson(json);
+    } else {
+      employeeData = null;
+    }
+
+    return EmployeeResult(data: employeeData, pagination: json['pagination']);
   }
 }

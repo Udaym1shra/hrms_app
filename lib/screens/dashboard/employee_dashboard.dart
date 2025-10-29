@@ -10,12 +10,13 @@ import '../../widgets/sidebar.dart';
 import '../../widgets/profile_card.dart';
 import '../../widgets/punch_in_out_widget.dart';
 import '../../widgets/geofence_map_widget.dart';
-import '../../widgets/common/stat_card.dart';
-import '../../widgets/common/stat_item.dart';
-import '../../widgets/common/detail_row.dart';
-import '../../widgets/common/info_row.dart';
-import '../../widgets/common/status_badge.dart';
-import '../../widgets/attendance/attendance_log_item.dart';
+import '../../widgets/attendance/attendance_status_card.dart';
+import '../../widgets/attendance/punch_button_widget.dart';
+import '../../widgets/attendance/attendance_details_card.dart';
+import '../../widgets/attendance/attendance_logs_card.dart';
+import '../../widgets/dashboard/quick_stats_widget.dart';
+import '../../widgets/dashboard/dashboard_app_bar.dart';
+import '../../widgets/profile/profile_content_widget.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_values.dart';
 import '../../core/constants/app_dimensions.dart';
@@ -327,93 +328,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   }
 
   Widget _buildAppBar(BuildContext context, AuthProvider authProvider) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth <= AppValues.mobileBreakpoint;
-
-    // Responsive padding - reduced to prevent system UI overlap
-    final horizontalPadding = isMobile ? 12.0 : 20.0;
-    final verticalPadding = isMobile ? 8.0 : 12.0;
-
-    // Responsive icon sizes
-    final iconSize = isMobile ? 18.0 : 24.0;
-    final menuIconSize = isMobile ? 20.0 : 24.0;
-
-    // Responsive spacing
-    final spacing = isMobile ? 8.0 : 16.0;
-    final titleSpacing = isMobile ? 8.0 : 12.0;
-
-    return SafeArea(
-      bottom: false,
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: horizontalPadding,
-          vertical: verticalPadding,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-              spreadRadius: 0,
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Menu Button - Hamburger icon
-            Container(
-              decoration: BoxDecoration(
-                color: AppTheme.backgroundColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: IconButton(
-                icon: Icon(
-                  Icons.menu,
-                  color: AppTheme.primaryColor,
-                  size: menuIconSize,
-                ),
-                onPressed: _toggleSidebar,
-                padding: EdgeInsets.all(isMobile ? 8 : 12),
-                constraints: BoxConstraints(
-                  minWidth: isMobile ? 36 : 48,
-                  minHeight: isMobile ? 36 : 48,
-                ),
-              ),
-            ),
-
-            SizedBox(width: spacing),
-
-            // Title with icon
-            Expanded(
-              child: Row(
-                children: [
-                  Image.asset(
-                    AppConstants.companyLogoAsset,
-                    height: iconSize + (isMobile ? 6 : 8),
-                    fit: BoxFit.contain,
-                  ),
-                  SizedBox(width: titleSpacing),
-                  Flexible(
-                    child: Text(
-                      _getPageTitle(),
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
-                            letterSpacing: 0.5,
-                            fontSize: isMobile ? 16 : 20,
-                          ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return DashboardAppBar(
+      title: _getPageTitle(),
+      onMenuPressed: _toggleSidebar,
     );
   }
 
@@ -565,42 +482,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
           const SizedBox(height: 24),
 
           // Quick Stats
-          _buildQuickStats(),
+          const QuickStatsWidget(),
         ],
       ),
-    );
-  }
-
-  Widget _buildQuickStats() {
-    return Row(
-      children: [
-        Expanded(
-          child: StatCard(
-            title: 'Total Days',
-            value: '30',
-            icon: Icons.calendar_today_rounded,
-            color: AppTheme.primaryColor,
-          ),
-        ),
-        const SizedBox(width: AppDimensions.spacingM),
-        Expanded(
-          child: StatCard(
-            title: 'Present',
-            value: '28',
-            icon: Icons.check_circle_rounded,
-            color: AppTheme.successColor,
-          ),
-        ),
-        const SizedBox(width: AppDimensions.spacingM),
-        Expanded(
-          child: StatCard(
-            title: 'Leaves',
-            value: '2',
-            icon: Icons.event_busy_rounded,
-            color: AppTheme.warningColor,
-          ),
-        ),
-      ],
     );
   }
 
@@ -653,19 +537,25 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Attendance Status Card
-                  _buildAttendanceStatusCard(attendanceData),
+                  AttendanceStatusCard(attendanceData: attendanceData),
                   const SizedBox(height: 16),
 
                   // Punch In/Out Button
-                  _buildPunchButton(attendanceData),
+                  PunchButtonWidget(
+                    attendanceData: attendanceData,
+                    onPunch: () => _handlePunchAction(
+                      _getNextPunchAction(attendanceData),
+                      attendanceData,
+                    ),
+                  ),
                   const SizedBox(height: 16),
 
                   // Attendance Details Card
-                  _buildAttendanceDetailsCard(attendanceData),
+                  AttendanceDetailsCard(attendanceData: attendanceData),
                   const SizedBox(height: 16),
 
                   // Attendance Logs Card
-                  _buildAttendanceLogsCard(attendanceData),
+                  AttendanceLogsCard(attendanceData: attendanceData),
                 ],
               ),
             );
@@ -703,266 +593,13 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     }
   }
 
-  // Build attendance status card
-  Widget _buildAttendanceStatusCard(Map<String, dynamic> attendanceData) {
-    final status = attendanceData['status'] ?? 'Unknown';
-    final attendanceDate = attendanceData['attendanceDate'] ?? 'N/A';
-    final productionHour = attendanceData['productionHour'] ?? 0;
-
-    Color statusColor;
-    IconData statusIcon;
-
-    switch (status.toLowerCase()) {
-      case 'present':
-        statusColor = AppTheme.successColor;
-        statusIcon = Icons.check_circle_rounded;
-        break;
-      case 'absent':
-        statusColor = AppTheme.errorColor;
-        statusIcon = Icons.cancel_rounded;
-        break;
-      case 'late':
-        statusColor = AppTheme.warningColor;
-        statusIcon = Icons.schedule_rounded;
-        break;
-      default:
-        statusColor = AppTheme.textSecondary;
-        statusIcon = Icons.help_outline_rounded;
-    }
-
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [statusColor.withOpacity(0.05), Colors.white],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(statusIcon, color: statusColor, size: 28),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          AppStrings.attendanceStatus,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textPrimary,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${AppStrings.date}: $attendanceDate',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppTheme.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: statusColor.withOpacity(0.3),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: StatusBadge(status: status, color: statusColor),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.backgroundColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: StatItem(
-                        label: AppStrings.productionHours,
-                        value: '${productionHour.toStringAsFixed(1)} hrs',
-                        icon: Icons.access_time_rounded,
-                        color: AppTheme.primaryColor,
-                      ),
-                    ),
-                    Container(width: 1, height: 40, color: Colors.grey[300]),
-                    Expanded(
-                      child: StatItem(
-                        label: AppStrings.earlyComing,
-                        value:
-                            '${attendanceData['earlyComingMinutes'] ?? 0} ${AppStrings.minutes}',
-                        icon: Icons.trending_up_rounded,
-                        color: AppTheme.successColor,
-                      ),
-                    ),
-                    Container(width: 1, height: 40, color: Colors.grey[300]),
-                    Expanded(
-                      child: StatItem(
-                        label: AppStrings.lateComing,
-                        value:
-                            '${attendanceData['lateComingMinutes'] ?? 0} ${AppStrings.minutes}',
-                        icon: Icons.trending_down_rounded,
-                        color: AppTheme.warningColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Build punch button
-  Widget _buildPunchButton(Map<String, dynamic> attendanceData) {
+  // Get next punch action from attendance data
+  String _getNextPunchAction(Map<String, dynamic> attendanceData) {
     final attendanceLogs =
         attendanceData['attendanceLogsId'] as List<dynamic>? ?? [];
     final lastLog = attendanceLogs.isNotEmpty ? attendanceLogs.last : null;
     final lastPunchType = lastLog?['punchType'] ?? 'PunchOut';
-
-    // Determine next action
-    final nextAction = lastPunchType == 'PunchIn' ? 'PunchOut' : 'PunchIn';
-    final buttonColor = nextAction == 'PunchIn'
-        ? AppTheme.successColor
-        : AppTheme.errorColor;
-    final buttonIcon = nextAction == 'PunchIn'
-        ? Icons.login_rounded
-        : Icons.logout_rounded;
-
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [buttonColor.withOpacity(0.1), Colors.white],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: buttonColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.flash_on_rounded,
-                      color: buttonColor,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    AppStrings.quickAction,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: () =>
-                      _handlePunchAction(nextAction, attendanceData),
-                  icon: Icon(buttonIcon, size: 24),
-                  label: Text(
-                    nextAction,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: buttonColor,
-                    foregroundColor: Colors.white,
-                    elevation: 3,
-                    shadowColor: buttonColor.withOpacity(0.4),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-              ),
-              if (lastLog != null) ...[
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.backgroundColor,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.history_rounded,
-                        size: 14,
-                        color: AppTheme.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${AppStrings.lastPunch}: $lastPunchType at ${lastLog['date']}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.textSecondary,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
+    return lastPunchType == 'PunchIn' ? 'PunchOut' : 'PunchIn';
   }
 
   // Handle punch action
@@ -1027,226 +664,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     }
   }
 
-  // Build attendance details card
-  Widget _buildAttendanceDetailsCard(Map<String, dynamic> attendanceData) {
-    final punchInTime = attendanceData['punchInTime'];
-    final punchOutTime = attendanceData['punchOutTime'];
-    final earlyDepartureMinutes = attendanceData['earlyDepartureMinutes'] ?? 0;
-    final lateDepartureMinutes = attendanceData['lateDepartureMinutes'] ?? 0;
-
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [AppTheme.primaryColor.withOpacity(0.05), Colors.white],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.info_outline_rounded,
-                      color: AppTheme.primaryColor,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    AppStrings.attendanceDetails,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.backgroundColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    DetailRow(
-                      label: AppStrings.punchInTime,
-                      value: punchInTime ?? AppStrings.notAvailable,
-                      icon: Icons.login_rounded,
-                    ),
-                    const Divider(height: AppDimensions.spacingL),
-                    DetailRow(
-                      label: AppStrings.punchOutTime,
-                      value: punchOutTime ?? AppStrings.notAvailable,
-                      icon: Icons.logout_rounded,
-                    ),
-                    const Divider(height: AppDimensions.spacingL),
-                    DetailRow(
-                      label: AppStrings.earlyDeparture,
-                      value: '$earlyDepartureMinutes ${AppStrings.minutes}',
-                      icon: Icons.trending_up_rounded,
-                    ),
-                    const Divider(height: AppDimensions.spacingL),
-                    DetailRow(
-                      label: AppStrings.lateDeparture,
-                      value: '$lateDepartureMinutes ${AppStrings.minutes}',
-                      icon: Icons.trending_down_rounded,
-                    ),
-                    if (attendanceData['remark'] != null) ...[
-                      const Divider(height: AppDimensions.spacingL),
-                      DetailRow(
-                        label: AppStrings.remark,
-                        value: attendanceData['remark'],
-                        icon: Icons.note_rounded,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Build attendance logs card
-  Widget _buildAttendanceLogsCard(Map<String, dynamic> attendanceData) {
-    final attendanceLogs =
-        attendanceData['attendanceLogsId'] as List<dynamic>? ?? [];
-
-    if (attendanceLogs.isEmpty) {
-      return Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          padding: const EdgeInsets.all(40),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [AppTheme.backgroundColor, Colors.white],
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                Icons.history_rounded,
-                size: 48,
-                color: AppTheme.textSecondary.withOpacity(0.5),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                AppStrings.noAttendanceLogs,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [AppTheme.primaryColor.withOpacity(0.05), Colors.white],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.history_rounded,
-                      color: AppTheme.primaryColor,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    AppStrings.attendanceLogs,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${attendanceLogs.length} ${AppStrings.entries}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              ...attendanceLogs.asMap().entries.map((entry) {
-                final index = entry.key;
-                final log = entry.value;
-                return Padding(
-                  padding: EdgeInsets.only(
-                    bottom: index < attendanceLogs.length - 1
-                        ? AppDimensions.spacingM
-                        : 0,
-                  ),
-                  child: AttendanceLogItem(
-                    log: log as Map<String, dynamic>,
-                    index: index + 1,
-                  ),
-                );
-              }).toList(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildLeavesContent() {
     return Center(
       child: Text('${AppStrings.leaves} - ${AppStrings.comingSoon}'),
@@ -1262,138 +679,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppTheme.primaryColor.withOpacity(0.05),
-                    Colors.white,
-                  ],
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppTheme.primaryColor,
-                                AppTheme.primaryColor.withOpacity(0.8),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.person_rounded,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          AppStrings.personalInfo,
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textPrimary,
-                              ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.backgroundColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        children: [
-                          InfoRow(
-                            label: AppStrings.name,
-                            value: employeeProvider.employee!.fullName,
-                            icon: Icons.person_outline_rounded,
-                          ),
-                          const Divider(height: AppDimensions.spacingL),
-                          InfoRow(
-                            label: AppStrings.employeeCode,
-                            value: employeeProvider.employee!.empCode,
-                            icon: Icons.badge_outlined,
-                          ),
-                          const Divider(height: AppDimensions.spacingL),
-                          InfoRow(
-                            label: AppStrings.emailLabel,
-                            value: employeeProvider.employee!.email,
-                            icon: Icons.email_outlined,
-                          ),
-                          const Divider(height: AppDimensions.spacingL),
-                          InfoRow(
-                            label: AppStrings.mobileLabel,
-                            value:
-                                employeeProvider.employee!.mobile ??
-                                AppStrings.notAvailable,
-                            icon: Icons.phone_outlined,
-                          ),
-                          const Divider(height: AppDimensions.spacingL),
-                          InfoRow(
-                            label: AppStrings.department,
-                            value:
-                                employeeProvider
-                                    .employee!
-                                    .departmentModel
-                                    ?.name ??
-                                AppStrings.notAvailable,
-                            icon: Icons.business_outlined,
-                          ),
-                          const Divider(height: AppDimensions.spacingL),
-                          InfoRow(
-                            label: AppStrings.designation,
-                            value:
-                                employeeProvider
-                                    .employee!
-                                    .designationModel
-                                    ?.name ??
-                                AppStrings.notAvailable,
-                            icon: Icons.work_outline_rounded,
-                          ),
-                          const Divider(height: AppDimensions.spacingL),
-                          InfoRow(
-                            label: AppStrings.joinDateLabel,
-                            value:
-                                employeeProvider.employee!.joinDate ??
-                                AppStrings.notAvailable,
-                            icon: Icons.calendar_today_outlined,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return ProfileContentWidget(employee: employeeProvider.employee!);
   }
 
   Widget _buildComingSoonContent() {

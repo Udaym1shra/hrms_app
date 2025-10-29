@@ -6,11 +6,9 @@ import '../models/employee_models.dart';
 import '../models/attendance_models.dart';
 import '../core/network/api_endpoints.dart';
 import 'storage_service.dart';
-import '../core/constants/app_constants.dart';
+// Centralized endpoints
 
 class ApiService {
-  static const String baseUrl = AppConstants.baseUrl;
-  static const String hrContext = AppConstants.hrContext;
   final StorageService _storageService;
   late final http.Client _client;
 
@@ -46,7 +44,7 @@ class ApiService {
   // Authentication APIs
   Future<LoginResponseModel> login(LoginRequestModel request) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/auth/login');
+      final url = Uri.parse('${ApiEndpoints.baseUrl}${ApiEndpoints.login}');
       final response = await _client.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -62,7 +60,9 @@ class ApiService {
 
   Future<Map<String, dynamic>> forgotPassword(String email) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/auth/forgot-password');
+      final url = Uri.parse(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.forgotPassword}',
+      );
       final response = await _client.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -77,7 +77,9 @@ class ApiService {
 
   Future<Map<String, dynamic>> resetPassword(Map<String, dynamic> data) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/auth/reset-password');
+      final url = Uri.parse(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.resetPassword}',
+      );
       final response = await _client.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -93,7 +95,9 @@ class ApiService {
   // Employee APIs
   Future<EmployeeResponse> getEmployeeById(int employeeId) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/employee/$employeeId');
+      final url = Uri.parse(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.employeeById(employeeId)}',
+      );
       final response = await _client.get(url, headers: _getHeaders());
 
       final responseData = _handleResponse(response);
@@ -121,24 +125,25 @@ class ApiService {
     String? employeeType,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/$hrContext/employee').replace(
-        queryParameters: {
-          'limit': limit.toString(),
-          'page': page.toString(),
-          if (searchQuery != null) 'search': searchQuery,
-          if (departmentIds != null) 'departmentIds': departmentIds,
-          if (order != null) 'order': order,
-          if (status != null && status != 'all') 'status': status,
-          if (tenantIds != null) 'tenantIds': tenantIds.toString(),
-          if (reportingManagerId != null)
-            'reportingManagerId': reportingManagerId,
-          if (roleId != null) 'roleId': roleId.toString(),
-          if (designationIds != null) 'designationIds': designationIds,
-          if (branchId != null) 'branchId': branchId,
-          if (isbulk != null) 'isbulk': isbulk.toString(),
-          if (employeeType != null) 'employeeType': employeeType,
-        },
-      );
+      final uri = Uri.parse('${ApiEndpoints.baseUrl}${ApiEndpoints.employees}')
+          .replace(
+            queryParameters: {
+              'limit': limit.toString(),
+              'page': page.toString(),
+              if (searchQuery != null) 'search': searchQuery,
+              if (departmentIds != null) 'departmentIds': departmentIds,
+              if (order != null) 'order': order,
+              if (status != null && status != 'all') 'status': status,
+              if (tenantIds != null) 'tenantIds': tenantIds.toString(),
+              if (reportingManagerId != null)
+                'reportingManagerId': reportingManagerId,
+              if (roleId != null) 'roleId': roleId.toString(),
+              if (designationIds != null) 'designationIds': designationIds,
+              if (branchId != null) 'branchId': branchId,
+              if (isbulk != null) 'isbulk': isbulk.toString(),
+              if (employeeType != null) 'employeeType': employeeType,
+            },
+          );
 
       final response = await _client.get(uri, headers: _getHeaders());
 
@@ -155,12 +160,15 @@ class ApiService {
     int? branchId,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/$hrContext/geofencing-config').replace(
-        queryParameters: {
-          if (tenantId != null) 'tenantId': tenantId.toString(),
-          if (branchId != null) 'branchId': branchId.toString(),
-        },
-      );
+      final uri =
+          Uri.parse(
+            '${ApiEndpoints.baseUrl}${ApiEndpoints.geofencingConfig}',
+          ).replace(
+            queryParameters: {
+              if (tenantId != null) 'tenantId': tenantId.toString(),
+              if (branchId != null) 'branchId': branchId.toString(),
+            },
+          );
 
       final response = await _client.get(uri, headers: _getHeaders());
 
@@ -174,23 +182,29 @@ class ApiService {
     required int employeeId,
     required double lat,
     required double lon,
-    required String dateWithTime,
+    required String date, // YYYY-MM-DD
+    required String time, // HH:mm:ss
+    required String inOut, // "In" | "Out"
     required int tenantId,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/geofencing-employee-location');
+      final url = Uri.parse(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.geofencingEmployeeLocation}',
+      );
+      final payload = {
+        'employeeId': employeeId,
+        'lat': lat,
+        'lon': lon,
+        'date': date,
+        'time': time,
+        'inOut': inOut,
+        'tenantId': tenantId,
+      };
       final response = await _client.post(
         url,
         headers: _getHeaders(),
-        body: jsonEncode({
-          'employeeId': employeeId,
-          'lat': lat,
-          'lon': lon,
-          'date': dateWithTime,
-          'tenantId': tenantId,
-        }),
+        body: jsonEncode(payload),
       );
-
       return _handleResponse(response);
     } catch (e) {
       throw Exception('Failed to create employee location: $e');
@@ -205,7 +219,7 @@ class ApiService {
     try {
       final uri =
           Uri.parse(
-            '$baseUrl/$hrContext/geofencing-config/employee/$employeeId',
+            '${ApiEndpoints.baseUrl}${ApiEndpoints.geofencingEmployeeLocation}',
           ).replace(
             queryParameters: {
               if (tenantId != null) 'tenantId': tenantId.toString(),
@@ -228,7 +242,9 @@ class ApiService {
     int? tenantId,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/geofencing-config/validate');
+      final url = Uri.parse(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.geofencingValidate}',
+      );
       final response = await _client.post(
         url,
         headers: _getHeaders(),
@@ -246,31 +262,31 @@ class ApiService {
     }
   }
 
-  // Get employee location history
-  Future<Map<String, dynamic>> getEmployeeLocationHistory({
+  // Get employee location list for a specific date
+  Future<Map<String, dynamic>> getEmployeeLocationList({
     required int employeeId,
-    String? startDate,
-    String? endDate,
+    required String date,
     int limit = 50,
     int page = 1,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/$hrContext/geofencing-employee-location')
-          .replace(
+      final uri =
+          Uri.parse(
+            '${ApiEndpoints.baseUrl}${ApiEndpoints.geofencingEmployeeLocation}',
+          ).replace(
             queryParameters: {
               'employeeId': employeeId.toString(),
               'limit': limit.toString(),
               'page': page.toString(),
-              if (startDate != null) 'startDate': startDate,
-              if (endDate != null) 'endDate': endDate,
+              'startDate': date,
+              'endDate': date,
             },
           );
 
       final response = await _client.get(uri, headers: _getHeaders());
-
       return _handleResponse(response);
     } catch (e) {
-      throw Exception('Failed to fetch employee location history: $e');
+      throw Exception('Failed to fetch employee location list: $e');
     }
   }
 
@@ -284,7 +300,9 @@ class ApiService {
     int? tenantId,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/geofencing-config');
+      final url = Uri.parse(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.geofencingConfig}',
+      );
       final response = await _client.put(
         url,
         headers: _getHeaders(),
@@ -315,7 +333,7 @@ class ApiService {
   }) async {
     try {
       final url = Uri.parse(
-        '$baseUrl${ApiEndpoints.markAttendance(employeeId)}',
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.markAttendance(employeeId)}',
       );
       final response = await _client.put(
         url,
@@ -346,7 +364,7 @@ class ApiService {
   }) async {
     try {
       final url = Uri.parse(
-        '$baseUrl${ApiEndpoints.markAttendance(employeeId)}',
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.markAttendance(employeeId)}',
       );
       final response = await _client.put(
         url,
@@ -371,7 +389,7 @@ class ApiService {
   Future<AttendanceByIdResponse> getAttendanceById(int attendanceId) async {
     try {
       final url = Uri.parse(
-        '$baseUrl${ApiEndpoints.getAttendanceById(attendanceId)}',
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.getAttendanceById(attendanceId)}',
       );
       final response = await _client.get(url, headers: _getHeaders());
 
@@ -386,7 +404,7 @@ class ApiService {
   Future<Map<String, dynamic>> getAttendanceListById(int attendanceId) async {
     try {
       final url = Uri.parse(
-        '$baseUrl${ApiEndpoints.attendance}/get/list/$attendanceId',
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.attendance}/get/list/$attendanceId',
       );
       final response = await _client.get(url, headers: _getHeaders());
 
@@ -404,7 +422,7 @@ class ApiService {
   }) async {
     try {
       final url = Uri.parse(
-        '$baseUrl/$hrContext/attendance/$employeeId',
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.attendance}/$employeeId',
       ).replace(queryParameters: {'date': date, 'limit': '10'});
       final response = await _client.get(url, headers: _getHeaders());
 
@@ -431,26 +449,30 @@ class ApiService {
 
       if (employeeId != null) {
         // Use path parameter when employeeId is provided
-        uri = Uri.parse('$baseUrl/$hrContext/attendance/$employeeId').replace(
-          queryParameters: {
-            'limit': limit.toString(),
-            'page': page.toString(),
-            if (tenantId != null) 'tenantId': tenantId.toString(),
-            if (startDate != null) 'startDate': startDate,
-            if (endDate != null) 'endDate': endDate,
-          },
-        );
+        uri =
+            Uri.parse(
+              '${ApiEndpoints.baseUrl}${ApiEndpoints.attendance}/$employeeId',
+            ).replace(
+              queryParameters: {
+                'limit': limit.toString(),
+                'page': page.toString(),
+                if (tenantId != null) 'tenantId': tenantId.toString(),
+                if (startDate != null) 'startDate': startDate,
+                if (endDate != null) 'endDate': endDate,
+              },
+            );
       } else {
         // Use query parameters when no specific employeeId
-        uri = Uri.parse('$baseUrl${ApiEndpoints.attendance}').replace(
-          queryParameters: {
-            'limit': limit.toString(),
-            'page': page.toString(),
-            if (tenantId != null) 'tenantId': tenantId.toString(),
-            if (startDate != null) 'startDate': startDate,
-            if (endDate != null) 'endDate': endDate,
-          },
-        );
+        uri = Uri.parse('${ApiEndpoints.baseUrl}${ApiEndpoints.attendance}')
+            .replace(
+              queryParameters: {
+                'limit': limit.toString(),
+                'page': page.toString(),
+                if (tenantId != null) 'tenantId': tenantId.toString(),
+                if (startDate != null) 'startDate': startDate,
+                if (endDate != null) 'endDate': endDate,
+              },
+            );
       }
 
       final response = await _client.get(uri, headers: _getHeaders());
@@ -468,12 +490,13 @@ class ApiService {
     int tenantId,
   ) async {
     try {
-      final uri = Uri.parse('$baseUrl/$hrContext/attendance/$employeeId');
+      final uri = Uri.parse(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.attendance}/$employeeId',
+      );
 
       final response = await _client.get(uri, headers: _getHeaders());
 
       final responseData = _handleResponse(response);
-      print('Today\'s attendance response: $responseData');
       return AttendanceResponse.fromJson(responseData);
     } catch (e) {
       throw Exception('Failed to fetch today\'s attendance: $e');
@@ -486,7 +509,7 @@ class ApiService {
   ) async {
     try {
       final url = Uri.parse(
-        '$baseUrl${ApiEndpoints.getEmployeePunchingDetails(employeeId)}',
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.getEmployeePunchingDetails(employeeId)}',
       );
       final response = await _client.get(url, headers: _getHeaders());
 
@@ -502,7 +525,9 @@ class ApiService {
     AttendanceUpdatePayload payload,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl${ApiEndpoints.attendance}');
+      final url = Uri.parse(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.attendance}',
+      );
       final response = await _client.put(
         url,
         headers: _getHeaders(),
@@ -518,7 +543,7 @@ class ApiService {
   // Dashboard APIs
   Future<Map<String, dynamic>> getDashboardData() async {
     try {
-      final url = Uri.parse('$baseUrl/$hrContext/dashboard');
+      final url = Uri.parse('${ApiEndpoints.baseUrl}${ApiEndpoints.dashboard}');
       final response = await _client.get(url, headers: _getHeaders());
 
       return _handleResponse(response);

@@ -15,6 +15,7 @@ import '../../widgets/attendance/punch_button_widget.dart';
 import '../../widgets/attendance/attendance_details_card.dart';
 import '../../widgets/attendance/attendance_logs_card.dart';
 import '../../widgets/dashboard/quick_stats_widget.dart';
+import '../../widgets/geofence/location_table.dart';
 import '../../widgets/dashboard/dashboard_app_bar.dart';
 import '../../widgets/profile/profile_content_widget.dart';
 import '../../core/constants/app_strings.dart';
@@ -483,9 +484,95 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
           // Quick Stats
           const QuickStatsWidget(),
+
+          const SizedBox(height: 24),
+
+          // Today's Location List
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _getTodayLocationList(employeeProvider),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                );
+              }
+              if (snapshot.hasError) {
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      'Failed to load today\'s locations: ${snapshot.error}',
+                      style: TextStyle(color: AppTheme.errorColor),
+                    ),
+                  ),
+                );
+              }
+              final locations = snapshot.data ?? const <Map<String, dynamic>>[];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Today\'s Location Records',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                  ),
+                  LocationTable(locations: locations),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _getTodayLocationList(
+    EmployeeProvider employeeProvider,
+  ) async {
+    try {
+      final userData = await SessionStorage.getUserData();
+      if (userData == null) return [];
+
+      final employeeId = userData['user']?['employeeId'];
+      if (employeeId == null) return [];
+
+      final now = DateTime.now();
+      final date =
+          '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      final resp = await employeeProvider.apiService.getEmployeeLocationList(
+        employeeId: employeeId,
+        date: date,
+        limit: 100,
+        page: 1,
+      );
+
+      // Expecting response like { error: false, content: { result: { data: [...] } } }
+      final content = resp['content'];
+      if (content == null) return [];
+      final result = content['result'];
+      if (result == null) return [];
+      final data = result['data'];
+      if (data is List) {
+        // Normalize to List<Map<String, dynamic>>
+        return data
+            .whereType<Map>()
+            .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+            .cast<Map<String, dynamic>>()
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
   }
 
   Widget _buildAttendanceContent() {
@@ -642,6 +729,22 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
       }
 
       if (response['error'] == false) {
+        final tenantId = await SessionStorage.getTenantId();
+
+        if (action == 'PunchIn') {
+          final employeeProvider = Provider.of<EmployeeProvider>(
+            context,
+            listen: false,
+          );
+          _geofenceService.setApiService(employeeProvider.apiService);
+          _geofenceService.startAutoLocationUploadForEmployee(
+            employeeId: employeeId,
+            tenantId: tenantId ?? 0,
+          );
+        } else if (action == 'PunchOut') {
+          _geofenceService.stopAutoLocationUpload();
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${action} successful!'),

@@ -729,6 +729,13 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
       );
 
       if (response['error'] == false) {
+        // Start auto location upload after punch in
+        _geofenceService.setApiService(widget.apiService);
+        _geofenceService.startAutoLocationUploadForEmployee(
+          employeeId: _employeeId!,
+          tenantId: _tenantId!,
+        );
+
         // Refresh attendance logs to get the latest status
         final today = DateTime.now().toIso8601String().split('T')[0];
         await _fetchAttendanceLogsByEmployeeAndDate(today);
@@ -808,6 +815,9 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
       );
 
       if (response['error'] == false) {
+        // Stop auto location upload after punch out
+        _geofenceService.stopAutoLocationUpload();
+
         // Refresh attendance logs to get the latest status
         final today = DateTime.now().toIso8601String().split('T')[0];
         await _fetchAttendanceLogsByEmployeeAndDate(today);

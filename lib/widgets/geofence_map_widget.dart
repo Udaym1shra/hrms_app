@@ -104,6 +104,14 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
             _isLoading = false;
           });
           _updateMapDisplay();
+
+          // Sync loaded config into shared GeofenceService for consistency
+          await _syncConfigToService();
+          // After syncing config, refresh inside/outside status in service
+          if (_currentPosition != null) {
+            final service = GeofenceService();
+            await service.refreshGeofenceStatus(_currentPosition!);
+          }
         }
       } else {
         _safeSetState(() {
@@ -307,6 +315,10 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
       _isInsideGeofence = isInside;
       _updateMapDisplay();
     });
+
+    // Also refresh status in shared GeofenceService so other widgets get updated
+    final service = GeofenceService();
+    service.refreshGeofenceStatus(_currentPosition!);
   }
 
   // Consistent polygon validation algorithm matching GeofenceService
@@ -746,13 +758,23 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                 child: ElevatedButton.icon(
                   onPressed: _isLoading
                       ? null
-                      : () {
+                      : () async {
                           _safeSetState(() {
                             _isLoading = true;
                             _error = null;
                           });
-                          _loadGeofenceConfig();
-                          _getCurrentLocation();
+                          await _loadGeofenceConfig();
+                          await _getCurrentLocation();
+                          await _syncConfigToService();
+                          if (_currentPosition != null) {
+                            final service = GeofenceService();
+                            await service.refreshGeofenceStatus(
+                              _currentPosition!,
+                            );
+                          }
+                          _safeSetState(() {
+                            _isLoading = false;
+                          });
                         },
                   icon: const Icon(Icons.refresh),
                   label: const Text('Refresh Status'),
@@ -771,5 +793,43 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
         ),
       ),
     );
+  }
+}
+
+// Helper to sync current widget geofence config into the shared service
+extension on _GeofenceMapWidgetState {
+  Future<void> _syncConfigToService() async {
+    try {
+      if (_geofenceConfig == null) return;
+      final service = GeofenceService();
+      service.setApiService(widget.apiService);
+
+      // Prefer polygon if available; else circle
+      if (_geofenceConfig!['boundary'] != null &&
+          _geofenceConfig!['boundary']['type'] == 'Polygon') {
+        await service.setupPolygonGeofence(
+          employeeId: widget.employeeId,
+          tenantId: _geofenceConfig!['tenantId'] ?? widget.tenantId,
+          boundary: _geofenceConfig!['boundary'],
+          geofenceId: _geofenceConfig!['id'],
+          geofenceName: 'Office Location',
+        );
+      } else if (_geofenceConfig!['lat'] != null &&
+          _geofenceConfig!['lon'] != null &&
+          _geofenceConfig!['radius'] != null) {
+        await service.setupGeofence(
+          employeeId: widget.employeeId,
+          tenantId: _geofenceConfig!['tenantId'] ?? widget.tenantId,
+          latitude: _geofenceConfig!['lat']?.toDouble() ?? 0.0,
+          longitude: _geofenceConfig!['lon']?.toDouble() ?? 0.0,
+          radius: _geofenceConfig!['radius']?.toDouble() ?? 100.0,
+          geofenceName: 'Office Location',
+        );
+      }
+    } catch (e) {
+      // Do not surface to UI; just log
+      // ignore: avoid_print
+      print('❌ Error syncing config to GeofenceService: $e');
+    }
   }
 }

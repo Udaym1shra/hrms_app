@@ -1129,9 +1129,11 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                     // Geofence restriction message (if outside boundary and geofence is configured)
                     Builder(
                       builder: (context) {
-                        // Get fresh status directly from service
+                        // Get fresh status directly from service and combine with widget state
                         final serviceInsideStatus =
                             _geofenceService.isInsideGeofenceStatus;
+                        final isInsideCombined =
+                            _isInsideGeofence || serviceInsideStatus;
                         final geofenceConfig = _geofenceService
                             .getCurrentGeofence();
                         final hasGeofenceConfig = geofenceConfig != null;
@@ -1143,7 +1145,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                             hasGeofenceConfig || serviceGeofenceEnabled;
 
                         final isOutsideGeofence =
-                            isGeofenceConfigured && !serviceInsideStatus;
+                            isGeofenceConfigured && !isInsideCombined;
 
                         if (isOutsideGeofence) {
                           return Container(
@@ -1192,6 +1194,8 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                         // Get fresh status directly from service (most reliable)
                         final serviceInsideStatus =
                             _geofenceService.isInsideGeofenceStatus;
+                        final isInsideCombined =
+                            _isInsideGeofence || serviceInsideStatus;
 
                         // CRITICAL: Check geofence configuration
                         // Use the geofence display status as the source of truth
@@ -1224,7 +1228,7 @@ class _PunchInOutWidgetState extends State<PunchInOutWidget> {
                         // If geofence is configured and user is outside, disable button
                         final isButtonDisabled =
                             _isLoading ||
-                            (hasGeofenceConfig && !serviceInsideStatus);
+                            (hasGeofenceConfig && !isInsideCombined);
 
                         return SizedBox(
                           width: double.infinity,

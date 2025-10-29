@@ -11,8 +11,11 @@ class AppConstants {
   static const String rememberedCredentialsKey = 'rememberedCredentials';
 
   // App Information
-  static const String appName = 'HRMS Mobile';
+  static const String appName = 'HRMS';
   static const String appVersion = '1.0.0';
+
+  // Assets
+  static const String companyLogoAsset = 'lib/assets/company_logo.jpeg';
 
   // Default Values
   static const int defaultPageSize = 10;

@@ -10,6 +10,16 @@ import '../../widgets/sidebar.dart';
 import '../../widgets/profile_card.dart';
 import '../../widgets/punch_in_out_widget.dart';
 import '../../widgets/geofence_map_widget.dart';
+import '../../widgets/common/stat_card.dart';
+import '../../widgets/common/stat_item.dart';
+import '../../widgets/common/detail_row.dart';
+import '../../widgets/common/info_row.dart';
+import '../../widgets/common/status_badge.dart';
+import '../../widgets/attendance/attendance_log_item.dart';
+import '../../core/constants/app_strings.dart';
+import '../../core/constants/app_values.dart';
+import '../../core/constants/app_dimensions.dart';
+import '../../core/constants/app_constants.dart';
 import '../../services/geofence_service.dart';
 
 class EmployeeDashboard extends StatefulWidget {
@@ -27,7 +37,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   bool _isGeofencingSupported = false;
   late AnimationController _sidebarController;
   late Animation<double> _sidebarAnimation;
-  bool _hasLoggedEmployee = false; // one-time employee data log
 
   @override
   void initState() {
@@ -35,7 +44,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
     // Initialize sidebar animation controller FIRST (synchronously)
     _sidebarController = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: Duration(
+        milliseconds: AppValues.sidebarAnimationDuration.toInt(),
+      ),
       vsync: this,
     );
     _sidebarAnimation = CurvedAnimation(
@@ -48,35 +59,16 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     _initializeServices();
     _loadEmployeeData();
     _initializeGeofencing();
-
-    // After first frame, attach a listener to log employee data once when loaded
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final employeeProvider = Provider.of<EmployeeProvider>(
-        context,
-        listen: false,
-      );
-      employeeProvider.addListener(_logEmployeeOnce);
-      _ensureEmployeeLoaded();
-      // Also watch AuthProvider to fetch once user becomes available
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      authProvider.addListener(_ensureEmployeeLoaded);
-    });
   }
 
   @override
   void dispose() {
     // Remove listener if provider is available
     try {
-      final employeeProvider = Provider.of<EmployeeProvider>(
-        context,
-        listen: false,
-      );
-      employeeProvider.removeListener(_logEmployeeOnce);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       authProvider.removeListener(_ensureEmployeeLoaded);
     } catch (_) {
-      // ignore: avoid_print
-      print('Employee provider not available during dispose');
+      // Employee provider not available during dispose
     }
     _geofenceService.dispose();
     if (_sidebarController.isAnimating || _sidebarController.isCompleted) {
@@ -84,28 +76,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     }
     _sidebarController.dispose();
     super.dispose();
-  }
-
-  // One-time logger for employee data once it's available
-  void _logEmployeeOnce() {
-    final employeeProvider = Provider.of<EmployeeProvider>(
-      context,
-      listen: false,
-    );
-    if (!_hasLoggedEmployee && employeeProvider.employee != null) {
-      final e = employeeProvider.employee!;
-      _hasLoggedEmployee = true;
-      // ignore: avoid_print
-      print(
-        'Employee Loaded: '
-        '{id: ${e.id}, '
-        'name: ${e.fullName}, '
-        'email: ${e.email}, '
-        'empCode: ${e.empCode}, '
-        'department: ${e.departmentModel?.name}, '
-        'designation: ${e.designationModel?.name}}',
-      );
-    }
   }
 
   void _toggleSidebar() {
@@ -158,7 +128,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         if (authProvider.user?.employeeId != null) {
           // Get tenantId using the improved method
           final tenantId = await SessionStorage.getTenantId();
-          print('Using tenantId from SessionStorage: $tenantId');
 
           await _geofenceService.fetchGeofenceConfigFromServer(
             employeeId: authProvider.user!.employeeId!,
@@ -167,7 +136,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         }
       }
     } catch (e) {
-      print('❌ Error initializing geofencing: $e');
+      // Error initializing geofencing
     }
   }
 
@@ -210,7 +179,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                   payloadMap['company_id'];
             }
           } catch (e) {
-            print('Failed to decode JWT token: $e');
+            // Failed to decode JWT token
           }
         }
       }
@@ -218,13 +187,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         tenantId = userData['user']?['companyId'];
       }
 
-      print(
-        '🔍 Extracted data - Employee ID: $employeeId, Tenant ID: $tenantId',
-      );
-
       return {'employeeId': employeeId ?? 0, 'tenantId': tenantId ?? 0};
     } catch (e) {
-      print('❌ Error getting employee and tenant data: $e');
+      // Error getting employee and tenant data
       return {'employeeId': 0, 'tenantId': 0};
     }
   }
@@ -259,7 +224,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width <= 768;
+    final isMobile =
+        MediaQuery.of(context).size.width <= AppValues.mobileBreakpoint;
 
     return Consumer2<AuthProvider, EmployeeProvider>(
       builder: (context, authProvider, employeeProvider, child) {
@@ -282,14 +248,19 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
                     // Main Content
                     Expanded(
-                      child: Column(
-                        children: [
-                          // Top App Bar
-                          _buildAppBar(context, authProvider),
+                      child: SafeArea(
+                        top: false,
+                        child: Column(
+                          children: [
+                            // Top App Bar
+                            _buildAppBar(context, authProvider),
 
-                          // Main Content Area
-                          Expanded(child: _buildMainContent(employeeProvider)),
-                        ],
+                            // Main Content Area
+                            Expanded(
+                              child: _buildMainContent(employeeProvider),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -303,7 +274,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                     _buildAppBar(context, authProvider),
 
                     // Main Content Area
-                    Expanded(child: _buildMainContent(employeeProvider)),
+                    Expanded(
+                      child: SafeArea(
+                        top: false,
+                        child: _buildMainContent(employeeProvider),
+                      ),
+                    ),
                   ],
                 ),
 
@@ -352,7 +328,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
   Widget _buildAppBar(BuildContext context, AuthProvider authProvider) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth <= 768;
+    final isMobile = screenWidth <= AppValues.mobileBreakpoint;
 
     // Responsive padding - reduced to prevent system UI overlap
     final horizontalPadding = isMobile ? 12.0 : 20.0;
@@ -413,22 +389,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
             Expanded(
               child: Row(
                 children: [
-                  Container(
-                    padding: EdgeInsets.all(isMobile ? 6 : 8),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppTheme.primaryColor,
-                          AppTheme.primaryColor.withOpacity(0.8),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.dashboard_rounded,
-                      color: Colors.white,
-                      size: iconSize,
-                    ),
+                  Image.asset(
+                    AppConstants.companyLogoAsset,
+                    height: iconSize + (isMobile ? 6 : 8),
+                    fit: BoxFit.contain,
                   ),
                   SizedBox(width: titleSpacing),
                   Flexible(
@@ -469,7 +433,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   }
 
   Widget _buildDashboardContent(EmployeeProvider employeeProvider) {
-    print('Employee Provider: ${employeeProvider}');
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -477,23 +440,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         children: [
           // Profile Card or loading/error placeholder
           if (employeeProvider.employee != null) ...[
-            // Log employee data to console safely during build
-            Builder(
-              builder: (_) {
-                final e = employeeProvider.employee!;
-                // ignore: avoid_print
-                print(
-                  'Employee Provider: '
-                  '{id: ${e.id}, '
-                  'name: ${e.fullName}, '
-                  'email: ${e.email}, '
-                  'empCode: ${e.empCode}, '
-                  'department: ${e.departmentModel?.name}, '
-                  'designation: ${e.designationModel?.name}}',
-                );
-                return const SizedBox.shrink();
-              },
-            ),
             ProfileCard(employee: employeeProvider.employee!),
           ] else ...[
             Card(
@@ -507,14 +453,15 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                      const SizedBox(width: 12),
-                      const Text('Loading employee...'),
+                      const SizedBox(width: AppDimensions.spacingM),
+                      const Text(AppStrings.loadingEmployee),
                     ] else ...[
                       const Icon(Icons.info_outline, color: Colors.grey),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          employeeProvider.error ?? 'Employee not loaded',
+                          employeeProvider.error ??
+                              AppStrings.employeeNotLoaded,
                           style: TextStyle(color: AppTheme.textSecondary),
                         ),
                       ),
@@ -573,7 +520,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                     padding: const EdgeInsets.all(20),
                     child: Center(
                       child: Text(
-                        'Error loading geofence data: ${snapshot.error}',
+                        '${AppStrings.failedToLoadGeofenceConfig}: ${snapshot.error}',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: AppTheme.errorColor,
                         ),
@@ -587,17 +534,13 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
               final employeeId = data['employeeId'] ?? 0;
               final tenantId = data['tenantId'] ?? 0;
 
-              print(
-                '🔍 Final values - Employee ID: $employeeId, Tenant ID: $tenantId',
-              );
-
               if (employeeId == 0) {
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
                     child: Center(
                       child: Text(
-                        'Employee ID not available',
+                        AppStrings.noDataFound,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: AppTheme.textSecondary,
                         ),
@@ -632,86 +575,32 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     return Row(
       children: [
         Expanded(
-          child: _buildStatCard(
-            'Total Days',
-            '30',
-            Icons.calendar_today_rounded,
-            AppTheme.primaryColor,
+          child: StatCard(
+            title: 'Total Days',
+            value: '30',
+            icon: Icons.calendar_today_rounded,
+            color: AppTheme.primaryColor,
           ),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: AppDimensions.spacingM),
         Expanded(
-          child: _buildStatCard(
-            'Present',
-            '28',
-            Icons.check_circle_rounded,
-            AppTheme.successColor,
+          child: StatCard(
+            title: 'Present',
+            value: '28',
+            icon: Icons.check_circle_rounded,
+            color: AppTheme.successColor,
           ),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: AppDimensions.spacingM),
         Expanded(
-          child: _buildStatCard(
-            'Leaves',
-            '2',
-            Icons.event_busy_rounded,
-            AppTheme.warningColor,
+          child: StatCard(
+            title: 'Leaves',
+            value: '2',
+            icon: Icons.event_busy_rounded,
+            color: AppTheme.warningColor,
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [color.withOpacity(0.05), color.withOpacity(0.02)],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 28),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                value,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppTheme.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -755,7 +644,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
             final attendanceData = snapshot.data;
             if (attendanceData == null) {
-              return const Center(child: Text('No attendance data available'));
+              return Center(child: Text(AppStrings.noDataFound));
             }
 
             return SingleChildScrollView(
@@ -809,7 +698,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
       return response.toJson();
     } catch (e) {
-      print('Error getting today attendance: $e');
+      // Error getting today attendance
       return null;
     }
   }
@@ -874,7 +763,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Attendance Status',
+                          AppStrings.attendanceStatus,
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(
                                 fontWeight: FontWeight.bold,
@@ -883,7 +772,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Date: $attendanceDate',
+                          '${AppStrings.date}: $attendanceDate',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: AppTheme.textSecondary),
                         ),
@@ -903,15 +792,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                         width: 1.5,
                       ),
                     ),
-                    child: Text(
-                      status.toUpperCase(),
-                      style: TextStyle(
-                        color: statusColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
+                    child: StatusBadge(status: status, color: statusColor),
                   ),
                 ],
               ),
@@ -925,29 +806,31 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                 child: Row(
                   children: [
                     Expanded(
-                      child: _buildStatItem(
-                        'Production Hours',
-                        '${productionHour.toStringAsFixed(1)} hrs',
-                        Icons.access_time_rounded,
-                        AppTheme.primaryColor,
+                      child: StatItem(
+                        label: AppStrings.productionHours,
+                        value: '${productionHour.toStringAsFixed(1)} hrs',
+                        icon: Icons.access_time_rounded,
+                        color: AppTheme.primaryColor,
                       ),
                     ),
                     Container(width: 1, height: 40, color: Colors.grey[300]),
                     Expanded(
-                      child: _buildStatItem(
-                        'Early Coming',
-                        '${attendanceData['earlyComingMinutes'] ?? 0} min',
-                        Icons.trending_up_rounded,
-                        AppTheme.successColor,
+                      child: StatItem(
+                        label: AppStrings.earlyComing,
+                        value:
+                            '${attendanceData['earlyComingMinutes'] ?? 0} ${AppStrings.minutes}',
+                        icon: Icons.trending_up_rounded,
+                        color: AppTheme.successColor,
                       ),
                     ),
                     Container(width: 1, height: 40, color: Colors.grey[300]),
                     Expanded(
-                      child: _buildStatItem(
-                        'Late Coming',
-                        '${attendanceData['lateComingMinutes'] ?? 0} min',
-                        Icons.trending_down_rounded,
-                        AppTheme.warningColor,
+                      child: StatItem(
+                        label: AppStrings.lateComing,
+                        value:
+                            '${attendanceData['lateComingMinutes'] ?? 0} ${AppStrings.minutes}',
+                        icon: Icons.trending_down_rounded,
+                        color: AppTheme.warningColor,
                       ),
                     ),
                   ],
@@ -957,40 +840,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
           ),
         ),
       ),
-    );
-  }
-
-  // Build stat item widget
-  Widget _buildStatItem(
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 22),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: color,
-            fontSize: 14,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: AppTheme.textSecondary,
-            fontSize: 10,
-          ),
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
     );
   }
 
@@ -1043,7 +892,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Quick Action',
+                    AppStrings.quickAction,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppTheme.textPrimary,
@@ -1099,7 +948,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Last: ${lastPunchType} at ${lastLog['date']}',
+                        '${AppStrings.lastPunch}: $lastPunchType at ${lastLog['date']}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppTheme.textSecondary,
                           fontSize: 11,
@@ -1218,7 +1067,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Attendance Details',
+                    AppStrings.attendanceDetails,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppTheme.textPrimary,
@@ -1235,35 +1084,35 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                 ),
                 child: Column(
                   children: [
-                    _buildDetailRow(
-                      'Punch In Time',
-                      punchInTime ?? 'Not Available',
-                      Icons.login_rounded,
+                    DetailRow(
+                      label: AppStrings.punchInTime,
+                      value: punchInTime ?? AppStrings.notAvailable,
+                      icon: Icons.login_rounded,
                     ),
-                    const Divider(height: 24),
-                    _buildDetailRow(
-                      'Punch Out Time',
-                      punchOutTime ?? 'Not Available',
-                      Icons.logout_rounded,
+                    const Divider(height: AppDimensions.spacingL),
+                    DetailRow(
+                      label: AppStrings.punchOutTime,
+                      value: punchOutTime ?? AppStrings.notAvailable,
+                      icon: Icons.logout_rounded,
                     ),
-                    const Divider(height: 24),
-                    _buildDetailRow(
-                      'Early Departure',
-                      '$earlyDepartureMinutes minutes',
-                      Icons.trending_up_rounded,
+                    const Divider(height: AppDimensions.spacingL),
+                    DetailRow(
+                      label: AppStrings.earlyDeparture,
+                      value: '$earlyDepartureMinutes ${AppStrings.minutes}',
+                      icon: Icons.trending_up_rounded,
                     ),
-                    const Divider(height: 24),
-                    _buildDetailRow(
-                      'Late Departure',
-                      '$lateDepartureMinutes minutes',
-                      Icons.trending_down_rounded,
+                    const Divider(height: AppDimensions.spacingL),
+                    DetailRow(
+                      label: AppStrings.lateDeparture,
+                      value: '$lateDepartureMinutes ${AppStrings.minutes}',
+                      icon: Icons.trending_down_rounded,
                     ),
                     if (attendanceData['remark'] != null) ...[
-                      const Divider(height: 24),
-                      _buildDetailRow(
-                        'Remark',
-                        attendanceData['remark'],
-                        Icons.note_rounded,
+                      const Divider(height: AppDimensions.spacingL),
+                      DetailRow(
+                        label: AppStrings.remark,
+                        value: attendanceData['remark'],
+                        icon: Icons.note_rounded,
                       ),
                     ],
                   ],
@@ -1273,37 +1122,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
           ),
         ),
       ),
-    );
-  }
-
-  // Build detail row widget
-  Widget _buildDetailRow(String label, String value, IconData icon) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: AppTheme.textSecondary),
-        const SizedBox(width: 12),
-        Expanded(
-          flex: 2,
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 3,
-          child: Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
-            textAlign: TextAlign.right,
-          ),
-        ),
-      ],
     );
   }
 
@@ -1335,7 +1153,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
               ),
               const SizedBox(height: 12),
               Text(
-                'No attendance logs available',
+                AppStrings.noAttendanceLogs,
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
@@ -1379,7 +1197,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Attendance Logs',
+                    AppStrings.attendanceLogs,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppTheme.textPrimary,
@@ -1396,7 +1214,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '${attendanceLogs.length} entries',
+                      '${attendanceLogs.length} ${AppStrings.entries}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppTheme.primaryColor,
                         fontWeight: FontWeight.w600,
@@ -1412,9 +1230,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                 final log = entry.value;
                 return Padding(
                   padding: EdgeInsets.only(
-                    bottom: index < attendanceLogs.length - 1 ? 12 : 0,
+                    bottom: index < attendanceLogs.length - 1
+                        ? AppDimensions.spacingM
+                        : 0,
                   ),
-                  child: _buildLogItem(log, index + 1),
+                  child: AttendanceLogItem(
+                    log: log as Map<String, dynamic>,
+                    index: index + 1,
+                  ),
                 );
               }).toList(),
             ],
@@ -1424,148 +1247,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     );
   }
 
-  // Build individual log item
-  Widget _buildLogItem(Map<String, dynamic> log, int index) {
-    final punchType = log['punchType'] ?? 'Unknown';
-    final date = log['date'] ?? 'N/A';
-    final recordType = log['recordType'] ?? 'Manual';
-    final lat = log['lat'] ?? 'N/A';
-    final lon = log['lon'] ?? 'N/A';
-
-    final punchColor = punchType == 'PunchIn'
-        ? AppTheme.successColor
-        : AppTheme.errorColor;
-    final punchIcon = punchType == 'PunchIn'
-        ? Icons.login_rounded
-        : Icons.logout_rounded;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: punchColor.withOpacity(0.2), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: punchColor.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  punchColor.withOpacity(0.2),
-                  punchColor.withOpacity(0.1),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(punchIcon, color: punchColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: punchColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '#$index $punchType',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: punchColor,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.backgroundColor,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        recordType,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.textSecondary,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.access_time_rounded,
-                      size: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      date,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.textSecondary,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.location_on_rounded,
-                      size: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        '$lat, $lon',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.textSecondary,
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildLeavesContent() {
-    return const Center(child: Text('Leave Management - Coming Soon'));
+    return Center(
+      child: Text('${AppStrings.leaves} - ${AppStrings.comingSoon}'),
+    );
   }
 
   Widget _buildProfileContent(EmployeeProvider employeeProvider) {
@@ -1625,7 +1310,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                         ),
                         const SizedBox(width: 12),
                         Text(
-                          'Personal Information',
+                          AppStrings.personalInfo,
                           style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(
                                 fontWeight: FontWeight.bold,
@@ -1643,48 +1328,60 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                       ),
                       child: Column(
                         children: [
-                          _buildInfoRow(
-                            'Name',
-                            employeeProvider.employee!.fullName,
-                            Icons.person_outline_rounded,
+                          InfoRow(
+                            label: AppStrings.name,
+                            value: employeeProvider.employee!.fullName,
+                            icon: Icons.person_outline_rounded,
                           ),
-                          const Divider(height: 24),
-                          _buildInfoRow(
-                            'Employee Code',
-                            employeeProvider.employee!.empCode,
-                            Icons.badge_outlined,
+                          const Divider(height: AppDimensions.spacingL),
+                          InfoRow(
+                            label: AppStrings.employeeCode,
+                            value: employeeProvider.employee!.empCode,
+                            icon: Icons.badge_outlined,
                           ),
-                          const Divider(height: 24),
-                          _buildInfoRow(
-                            'Email',
-                            employeeProvider.employee!.email,
-                            Icons.email_outlined,
+                          const Divider(height: AppDimensions.spacingL),
+                          InfoRow(
+                            label: AppStrings.emailLabel,
+                            value: employeeProvider.employee!.email,
+                            icon: Icons.email_outlined,
                           ),
-                          const Divider(height: 24),
-                          _buildInfoRow(
-                            'Mobile',
-                            employeeProvider.employee!.mobile ?? 'N/A',
-                            Icons.phone_outlined,
+                          const Divider(height: AppDimensions.spacingL),
+                          InfoRow(
+                            label: AppStrings.mobileLabel,
+                            value:
+                                employeeProvider.employee!.mobile ??
+                                AppStrings.notAvailable,
+                            icon: Icons.phone_outlined,
                           ),
-                          const Divider(height: 24),
-                          _buildInfoRow(
-                            'Department',
-                            employeeProvider.employee!.departmentModel?.name ??
-                                'N/A',
-                            Icons.business_outlined,
+                          const Divider(height: AppDimensions.spacingL),
+                          InfoRow(
+                            label: AppStrings.department,
+                            value:
+                                employeeProvider
+                                    .employee!
+                                    .departmentModel
+                                    ?.name ??
+                                AppStrings.notAvailable,
+                            icon: Icons.business_outlined,
                           ),
-                          const Divider(height: 24),
-                          _buildInfoRow(
-                            'Designation',
-                            employeeProvider.employee!.designationModel?.name ??
-                                'N/A',
-                            Icons.work_outline_rounded,
+                          const Divider(height: AppDimensions.spacingL),
+                          InfoRow(
+                            label: AppStrings.designation,
+                            value:
+                                employeeProvider
+                                    .employee!
+                                    .designationModel
+                                    ?.name ??
+                                AppStrings.notAvailable,
+                            icon: Icons.work_outline_rounded,
                           ),
-                          const Divider(height: 24),
-                          _buildInfoRow(
-                            'Join Date',
-                            employeeProvider.employee!.joinDate ?? 'N/A',
-                            Icons.calendar_today_outlined,
+                          const Divider(height: AppDimensions.spacingL),
+                          InfoRow(
+                            label: AppStrings.joinDateLabel,
+                            value:
+                                employeeProvider.employee!.joinDate ??
+                                AppStrings.notAvailable,
+                            icon: Icons.calendar_today_outlined,
                           ),
                         ],
                       ),
@@ -1699,54 +1396,28 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     );
   }
 
-  Widget _buildInfoRow(String label, String value, IconData icon) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: AppTheme.textSecondary),
-        const SizedBox(width: 12),
-        Expanded(
-          flex: 2,
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 3,
-          child: Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
-            textAlign: TextAlign.right,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildComingSoonContent() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.construction, size: 64, color: AppTheme.textSecondary),
-          SizedBox(height: 16),
+          Icon(
+            Icons.construction,
+            size: AppDimensions.iconXXL,
+            color: AppTheme.textSecondary,
+          ),
+          const SizedBox(height: AppDimensions.spacingM),
           Text(
-            'Coming Soon',
+            AppStrings.comingSoon,
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
               color: AppTheme.textSecondary,
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: AppDimensions.spacingS),
           Text(
-            'This feature is under development',
+            AppStrings.underDevelopment,
             style: TextStyle(color: AppTheme.textSecondary),
           ),
         ],
@@ -1757,17 +1428,17 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   String _getPageTitle() {
     switch (_selectedIndex) {
       case 0:
-        return 'Dashboard';
+        return AppStrings.dashboard;
       case 1:
-        return 'Employees';
+        return AppStrings.employees;
       case 6:
-        return 'Attendance';
+        return AppStrings.attendance;
       case 7:
-        return 'Leaves';
+        return AppStrings.leaves;
       case 11:
-        return 'My Profile';
+        return AppStrings.myProfile;
       default:
-        return 'HRMS Mobile';
+        return AppConstants.appName;
     }
   }
 
@@ -1776,7 +1447,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
       _selectedIndex = index;
     });
     // Close sidebar on mobile after selection
-    if (MediaQuery.of(context).size.width <= 768) {
+    if (MediaQuery.of(context).size.width <= AppValues.mobileBreakpoint) {
       _closeSidebar();
     }
   }
@@ -1785,12 +1456,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
+        title: const Text(AppStrings.logout),
+        content: const Text(AppStrings.logoutConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: const Text(AppStrings.cancel),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -1801,7 +1472,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
               );
               await authProvider.logout();
             },
-            child: const Text('Logout'),
+            child: const Text(AppStrings.logout),
           ),
         ],
       ),

@@ -12,27 +12,29 @@ import 'utils/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize shared preferences
   final prefs = await SharedPreferences.getInstance();
   final storageService = StorageService(prefs);
   final apiService = ApiService(storageService);
   final authService = AuthService(apiService, storageService);
-  
-  runApp(MyApp(
-    storageService: storageService,
-    apiService: apiService,
-    authService: authService,
-  ));
+
+  runApp(
+    MyApp(
+      storageService: storageService,
+      apiService: apiService,
+      authService: authService,
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
   final StorageService storageService;
   final ApiService apiService;
   final AuthService authService;
-  
+
   const MyApp({
-    Key? key, 
+    Key? key,
     required this.storageService,
     required this.apiService,
     required this.authService,
@@ -46,7 +48,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => EmployeeProvider(apiService)),
       ],
       child: MaterialApp(
-        title: 'HRMS Mobile',
+        title: 'HRMS',
         theme: AppTheme.lightTheme,
         debugShowCheckedModeBanner: false,
         home: const AuthWrapper(),
@@ -64,16 +66,14 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, authProvider, child) {
         if (authProvider.isLoading) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
-        
+
         if (authProvider.isAuthenticated) {
           return const EmployeeDashboard();
         }
-        
+
         return const LoginScreen();
       },
     );

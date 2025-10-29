@@ -11,7 +11,7 @@ class AppStrings {
   static const String delete = 'Delete';
   static const String refresh = 'Refresh';
   static const String retry = 'Retry';
-  
+
   // Authentication
   static const String login = 'Login';
   static const String logout = 'Logout';
@@ -26,7 +26,7 @@ class AppStrings {
   static const String invalidCredentials = 'Invalid credentials';
   static const String loginSuccess = 'Login successful';
   static const String logoutConfirm = 'Are you sure you want to logout?';
-  
+
   // Dashboard
   static const String dashboard = 'Dashboard';
   static const String profile = 'Profile';
@@ -35,7 +35,7 @@ class AppStrings {
   static const String employees = 'Employees';
   static const String reports = 'Reports';
   static const String settings = 'Settings';
-  
+
   // Employee
   static const String employeeCode = 'Employee Code';
   static const String fullName = 'Full Name';
@@ -46,7 +46,7 @@ class AppStrings {
   static const String workStatus = 'Work Status';
   static const String mobile = 'Mobile';
   static const String personalInfo = 'Personal Information';
-  
+
   // Attendance
   static const String punchIn = 'Punch In';
   static const String punchOut = 'Punch Out';
@@ -56,17 +56,18 @@ class AppStrings {
   static const String punchOutSuccess = 'Punched out successfully!';
   static const String punchInFailed = 'Punch in failed';
   static const String punchOutFailed = 'Punch out failed';
-  
+
   // Geofencing
   static const String geofenceStatus = 'Geofence Status';
   static const String insideGeofence = 'Inside Geofence';
   static const String outsideGeofence = 'Outside Geofence';
   static const String locationPermissionDenied = 'Location permission denied';
-  static const String locationPermissionPermanentlyDenied = 'Location permission permanently denied';
+  static const String locationPermissionPermanentlyDenied =
+      'Location permission permanently denied';
   static const String noGeofenceConfig = 'No geofence configuration found';
   static const String refreshLocation = 'Refresh Location';
   static const String refreshStatus = 'Refresh Status';
-  
+
   // Navigation
   static const String home = 'Home';
   static const String myProfile = 'My Profile';
@@ -78,24 +79,90 @@ class AppStrings {
   static const String teamMembers = 'Team Members';
   static const String teamReports = 'Team Reports';
   static const String recruitment = 'Recruitment';
-  
+
   // Errors
-  static const String networkError = 'Network error. Please check your connection.';
+  static const String networkError =
+      'Network error. Please check your connection.';
   static const String serverError = 'Server error. Please try again later.';
   static const String unknownError = 'An unknown error occurred';
   static const String validationError = 'Please check your input';
   static const String locationError = 'Error getting location';
-  
+
   // Validation Messages
   static const String emailRequired = 'Please enter your email';
   static const String emailInvalid = 'Please enter a valid email';
   static const String passwordRequired = 'Please enter your password';
-  static const String passwordTooShort = 'Password must be at least 6 characters';
-  static const String passwordTooLong = 'Password must be less than 50 characters';
-  
+  static const String passwordTooShort =
+      'Password must be at least 6 characters';
+  static const String passwordTooLong =
+      'Password must be less than 50 characters';
+
   // Status Messages
   static const String comingSoon = 'Coming Soon';
   static const String underDevelopment = 'This feature is under development';
   static const String noDataFound = 'No data found';
   static const String tryAgain = 'Something went wrong. Please try again.';
+
+  // Dashboard
+  static const String working = 'Working';
+  static const String notPunched = 'Not Punched';
+  static const String productionHours = 'Production Hours';
+  static const String startTime = 'Start';
+  static const String attendanceLogs = 'Attendance Logs';
+  static const String viewMap = 'View Map';
+  static const String selectedLocation = '(Selected Location)';
+  static const String latestLocation = '(Latest Location)';
+  static const String noLocationData = 'No location data available';
+  static const String mapIntegrationPlaceholder =
+      'Map integration would go here';
+  static const String showingLocationFromSelected =
+      'Showing location from selected punch log';
+  static const String showingLocationFromLatest =
+      'Showing location from latest punch log';
+  static const String timezone = 'Timezone';
+
+  // Attendance Details
+  static const String attendanceStatus = 'Attendance Status';
+  static const String attendanceDetails = 'Attendance Details';
+  static const String quickAction = 'Quick Action';
+  static const String lastPunch = 'Last';
+  static const String punchInTime = 'Punch In Time';
+  static const String punchOutTime = 'Punch Out Time';
+  static const String earlyDeparture = 'Early Departure';
+  static const String lateDeparture = 'Late Departure';
+  static const String earlyComing = 'Early Coming';
+  static const String lateComing = 'Late Coming';
+  static const String remark = 'Remark';
+  static const String notAvailable = 'Not Available';
+  static const String minutes = 'minutes';
+  static const String noAttendanceLogs = 'No attendance logs available';
+  static const String entries = 'entries';
+
+  // Geofence
+  static const String insideOfficeArea = 'Inside Office Area';
+  static const String outsideOfficeArea = 'Outside Office Area';
+  static const String locationRelativeToGeofence =
+      'Your current location relative to the configured geofence.';
+  static const String loadingGeofenceData = 'Loading geofence data...';
+  static const String failedToLoadGeofenceConfig =
+      'Failed to load geofence config';
+  static const String location = 'Location';
+  static const String punchingIn = 'Punching In...';
+  static const String punchingOut = 'Punching Out...';
+  static const String outsideOfficeAreaMessage =
+      'You are outside the office area. Please come inside to punch in/out.';
+
+  // Profile
+  static const String name = 'Name';
+  static const String emailLabel = 'Email';
+  static const String mobileLabel = 'Mobile';
+  static const String joinDateLabel = 'Join Date';
+
+  // Common UI
+  static const String date = 'DATE';
+  static const String type = 'TYPE';
+  static const String record = 'RECORD';
+  static const String time = 'TIME';
+  static const String loadingEmployee = 'Loading employee...';
+  static const String employeeNotLoaded = 'Employee not loaded';
 }

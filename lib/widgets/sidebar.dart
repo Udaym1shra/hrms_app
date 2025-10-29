@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../features/auth/data/models/user_model.dart';
+import '../core/constants/app_constants.dart';
 
 class Sidebar extends StatefulWidget {
   final UserModel? user;
@@ -86,19 +87,19 @@ class _SidebarState extends State<Sidebar> with TickerProviderStateMixin {
       ),
     );
 
+    // Wrap content with SafeArea to avoid system UI intrusions (status bar, notch)
+    final safeContent = SafeArea(child: sidebarContent);
+
     // Only apply internal animations on desktop (when parent doesn't handle them)
     if (!isMobile) {
       return SlideTransition(
         position: _slideAnimation,
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: sidebarContent,
-        ),
+        child: FadeTransition(opacity: _fadeAnimation, child: safeContent),
       );
     }
 
-    // On mobile, return content directly (animations handled by parent)
-    return sidebarContent;
+    // On mobile, return SafeArea-wrapped content directly (animations handled by parent)
+    return safeContent;
   }
 
   Widget _buildHeader() {
@@ -133,26 +134,13 @@ class _SidebarState extends State<Sidebar> with TickerProviderStateMixin {
                   ),
                 ),
               const SizedBox(width: 12),
-              // Logo with orange background
+              // Company Logo
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFA500), // Orange
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'GGen',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      letterSpacing: 1,
-                    ),
-                    textAlign: TextAlign.center,
+                child: Center(
+                  child: Image.asset(
+                    AppConstants.companyLogoAsset,
+                    height: 36,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),

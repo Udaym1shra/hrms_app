@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_theme.dart';
+import '../../core/constants/app_constants.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
 
@@ -83,22 +84,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Logo and Title
                 Column(
                   children: [
-                    Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryColor,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Icon(
-                        Icons.business,
-                        size: 60,
-                        color: Colors.white,
-                      ),
+                    Image.asset(
+                      AppConstants.companyLogoAsset,
+                      height: 80,
+                      fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'HRMS Mobile',
+                      'HRMS',
                       style: Theme.of(context).textTheme.headlineMedium
                           ?.copyWith(
                             fontWeight: FontWeight.bold,

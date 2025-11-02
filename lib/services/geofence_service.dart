@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/app_theme.dart';
+import '../utils/session_storage.dart';
 import 'api_service.dart';
+import 'background_location_service.dart';
+import 'notification_service.dart';
 
 class GeofenceService {
   static const String _geofenceKey = 'geofence_data';
@@ -38,6 +41,7 @@ class GeofenceService {
   StreamSubscription<Position>? _positionStreamSubscription;
   Timer? _locationUpdateTimer;
   Timer? _autoLocationUploadTimer;
+  Timer? _serviceMonitoringTimer;
 
   // Set API service
   void setApiService(ApiService apiService) {
@@ -47,6 +51,9 @@ class GeofenceService {
   // Initialize the geofence service
   Future<void> initialize() async {
     try {
+      // Initialize background service first
+      await BackgroundLocationService.initialize();
+
       // Load saved geofence data
       await _loadGeofenceData();
 
@@ -202,6 +209,19 @@ class GeofenceService {
       return;
     }
     _startAutoLocationUpload(employeeId: employeeId, tenantId: tenantId);
+
+    // Ensure geofence data is saved before starting background service
+    _saveGeofenceData().then((_) {
+      // Start background service when location upload starts
+      // The background service will check if employee is punched in before starting
+      BackgroundLocationService.start();
+    });
+
+    // Start periodic check to ensure service keeps running for geofencing
+    _startServiceMonitoring();
+
+    // Added By uday on 30_10_2025: Trigger an immediate upload so server has a record right away
+    testUploadLocationOnce(employeeId: employeeId, tenantId: tenantId);
   }
 
   // Check if auto upload timer is active
@@ -213,6 +233,71 @@ class GeofenceService {
   void stopAutoLocationUpload() {
     _autoLocationUploadTimer?.cancel();
     _autoLocationUploadTimer = null;
+
+    // Stop service monitoring
+    _serviceMonitoringTimer?.cancel();
+    _serviceMonitoringTimer = null;
+
+    // Stop background service when location upload stops
+    BackgroundLocationService.stop();
+  }
+
+  // Check if background service should be running based on punch status
+  Future<bool> shouldBackgroundServiceBeRunning() async {
+    if (_apiService == null) {
+      return false;
+    }
+
+    try {
+      // Get employee ID and tenant ID
+      final employeeId = await SessionStorage.getEmployeeId();
+      final tenantId = await SessionStorage.getTenantId();
+
+      if (employeeId == null || tenantId == null) {
+        return false;
+      }
+
+      // Fetch today's attendance logs
+      final now = DateTime.now();
+      final todayStr =
+          '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      final logsResp = await _apiService!.getAttendanceLogsByEmployeeAndDate(
+        employeeId: employeeId,
+        date: todayStr,
+      );
+
+      final logsList =
+          (logsResp['content']?['attendanceLogsId'] as List?) ?? [];
+      final lastLog = logsList.isNotEmpty ? logsList.last : null;
+      final lastType = lastLog != null
+          ? (lastLog['punchType']?.toString() ?? '')
+          : '';
+
+      // Return true only if last punch type is 'punchin'
+      return lastType.toLowerCase() == 'punchin';
+    } catch (e) {
+      print('❌ Error checking punch status: $e');
+      return false;
+    }
+  }
+
+  // Start service monitoring to ensure background service keeps running
+  // Enhanced for HyperOS - more frequent checks to catch killed services quickly
+  void _startServiceMonitoring() {
+    _serviceMonitoringTimer?.cancel();
+
+    // Check every 30 seconds on HyperOS devices to catch killed services quickly
+    // Regular devices: every 2 minutes is sufficient
+    _serviceMonitoringTimer = Timer.periodic(const Duration(seconds: 30), (
+      timer,
+    ) async {
+      try {
+        await BackgroundLocationService.ensureServiceRunning();
+      } catch (e) {
+        print('❌ Error in service monitoring: $e');
+      }
+    });
   }
 
   // Start periodic auto location upload every 5 minutes while punched in
@@ -226,7 +311,7 @@ class GeofenceService {
     final storedEmployeeId = employeeId;
     final storedTenantId = tenantId;
 
-    _autoLocationUploadTimer = Timer.periodic(const Duration(minutes: 5), (
+    _autoLocationUploadTimer = Timer.periodic(const Duration(minutes: 1), (
       _,
     ) async {
       try {
@@ -315,6 +400,11 @@ class GeofenceService {
             type: isInside ? GeofenceEventType.enter : GeofenceEventType.exit,
             timestamp: DateTime.now(),
           ),
+        );
+
+        // Show local notification on status change
+        NotificationService.instance.showGeofenceStatusChange(
+          isInside: _isInsideGeofence,
         );
       }
     } catch (e) {
@@ -685,6 +775,11 @@ class GeofenceService {
             timestamp: DateTime.now(),
           ),
         );
+
+        // Show local notification on status change
+        NotificationService.instance.showGeofenceStatusChange(
+          isInside: _isInsideGeofence,
+        );
       }
 
       // Update last known position
@@ -797,10 +892,19 @@ class GeofenceService {
   Future<void> _saveLastKnownLocation(Position position) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Added By uday on 30_10_2025: Guard against null timestamp from Geolocator
+      // Even though timestamp is typed non-nullable in newer geolocator versions,
+      // some devices can still yield null; guard via try/catch.
+      int safeTimestampMs;
+      try {
+        safeTimestampMs = position.timestamp.millisecondsSinceEpoch;
+      } catch (_) {
+        safeTimestampMs = DateTime.now().millisecondsSinceEpoch;
+      }
       final locationData = {
         'latitude': position.latitude,
         'longitude': position.longitude,
-        'timestamp': position.timestamp.millisecondsSinceEpoch,
+        'timestamp': safeTimestampMs,
         'accuracy': position.accuracy,
       };
       await prefs.setString(_lastKnownLocationKey, jsonEncode(locationData));
@@ -908,6 +1012,7 @@ class GeofenceService {
     _positionStreamSubscription?.cancel();
     _locationUpdateTimer?.cancel();
     _autoLocationUploadTimer?.cancel();
+    _serviceMonitoringTimer?.cancel();
     _geofenceEventController.close();
     _isInsideGeofenceController.close();
   }

@@ -26,7 +26,6 @@ class SessionStorage {
       final userDataString = prefs.getString(_userDataKey);
 
       if (userDataString != null) {
-        print('userData from storage: $userDataString');
         return jsonDecode(userDataString);
       }
       return null;

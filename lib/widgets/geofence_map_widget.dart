@@ -37,6 +37,11 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
   List<latlong.LatLng> _polygonPoints = [];
   latlong.LatLng? _currentLocationPoint;
   MapController? _mapController;
+  bool _isMapReady =
+      false; // Added By uday on 30_10_2025: Guard controller usage until map renders
+  latlong.LatLng?
+  _pendingCenter; // Added By uday on 30_10_2025: Store pending camera move
+  double _pendingZoom = 16.0;
 
   // Location stream subscription for live tracking
   StreamSubscription<geolocator.Position>? _positionStreamSubscription;
@@ -155,6 +160,16 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
         _isLoading = false;
       });
 
+      // Added By uday on 30_10_2025: Move map to initial current location for live tracing
+      if (_currentPosition != null) {
+        _currentLocationPoint = latlong.LatLng(
+          _currentPosition!.latitude,
+          _currentPosition!.longitude,
+        );
+        // Keep zoom consistent with initial zoom used in MapOptions
+        _moveCameraToCurrentLocationSafely(zoom: 16.0);
+      }
+
       // Set up continuous location stream
       _positionStreamSubscription =
           geolocator.Geolocator.getPositionStream(
@@ -172,60 +187,27 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
               // Update position and map display in a single setState
               _safeSetState(() {
                 _currentPosition = position;
-                // Update map display with new location
                 if (_currentPosition != null) {
                   _currentLocationPoint = latlong.LatLng(
                     _currentPosition!.latitude,
                     _currentPosition!.longitude,
                   );
                 }
-                // Check geofence status and update display
-                if (_currentPosition != null && _geofenceConfig != null) {
-                  final userLat = _currentPosition!.latitude;
-                  final userLon = _currentPosition!.longitude;
-                  bool isInside = false;
-
-                  // Check if it's a polygon boundary
-                  if (_geofenceConfig!['boundary'] != null &&
-                      _geofenceConfig!['boundary']['type'] == 'Polygon') {
-                    // Server provides boundary coordinates as [longitude, latitude]
-                    final coordinates =
-                        _geofenceConfig!['boundary']['coordinates'][0]
-                            as List<dynamic>;
-                    final polygonCoords = coordinates.map<List<double>>((
-                      coord,
-                    ) {
-                      final coordList = coord as List<dynamic>;
-                      // Keep [lon, lat] format as received from server
-                      return [coordList[0].toDouble(), coordList[1].toDouble()];
-                    }).toList();
-                    isInside = _isPointInPolygonConsistent(
-                      userLat,
-                      userLon,
-                      polygonCoords,
-                    );
-                  } else {
-                    final geofenceLat =
-                        _geofenceConfig!['lat']?.toDouble() ?? 0.0;
-                    final geofenceLon =
-                        _geofenceConfig!['lon']?.toDouble() ?? 0.0;
-                    final radius =
-                        _geofenceConfig!['radius']?.toDouble() ?? 0.0;
-                    if (geofenceLat != 0.0 &&
-                        geofenceLon != 0.0 &&
-                        radius > 0) {
-                      final distance = geolocator.Geolocator.distanceBetween(
-                        userLat,
-                        userLon,
-                        geofenceLat,
-                        geofenceLon,
-                      );
-                      isInside = distance <= radius;
-                    }
-                  }
-                  _isInsideGeofence = isInside;
-                }
               });
+
+              // Added By uday on 30_10_2025: Use GeofenceService to compute inside/outside for consistency
+              if (_currentPosition != null) {
+                final service = GeofenceService();
+                service.refreshGeofenceStatus(_currentPosition!).then((_) {
+                  if (!mounted || _isDisposed) return;
+                  _safeSetState(() {
+                    _isInsideGeofence = service.isInsideGeofenceStatus;
+                  });
+                });
+              }
+
+              // Added By uday on 30_10_2025: Keep map camera following current location
+              _moveCameraToCurrentLocationSafely(zoom: 16.0);
             },
             onError: (error) {
               print('❌ Location stream error: $error');
@@ -263,99 +245,20 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
     }
   }
 
-  void _checkGeofenceStatus() {
-    if (_currentPosition == null || _geofenceConfig == null) return;
+  void _checkGeofenceStatus() async {
+    if (_currentPosition == null) return;
 
-    final userLat = _currentPosition!.latitude;
-    final userLon = _currentPosition!.longitude;
-
-    print('🔍 GeofenceMapWidget checking status for: $userLat, $userLon');
-
-    bool isInside = false;
-
-    // Check if it's a polygon boundary
-    if (_geofenceConfig!['boundary'] != null &&
-        _geofenceConfig!['boundary']['type'] == 'Polygon') {
-      print('🔍 Using GeofenceService for polygon validation');
-
-      // Convert dynamic coordinates to List<List<double>>
-      // Server provides boundary coordinates as [longitude, latitude] format
-      final coordinates =
-          _geofenceConfig!['boundary']['coordinates'][0] as List<dynamic>;
-      final polygonCoords = coordinates.map<List<double>>((coord) {
-        final coordList = coord as List<dynamic>;
-        // Keep [lon, lat] format as received from server
-        return [coordList[0].toDouble(), coordList[1].toDouble()]; // [lon, lat]
-      }).toList();
-
-      // Use the same algorithm as GeofenceService
-      isInside = _isPointInPolygonConsistent(userLat, userLon, polygonCoords);
-      print('🔍 Polygon geofence result: $isInside');
-    } else {
-      // Fallback to circle geofence
-      final geofenceLat = _geofenceConfig!['lat']?.toDouble() ?? 0.0;
-      final geofenceLon = _geofenceConfig!['lon']?.toDouble() ?? 0.0;
-      final radius = _geofenceConfig!['radius']?.toDouble() ?? 0.0;
-
-      if (geofenceLat != 0.0 && geofenceLon != 0.0 && radius > 0) {
-        final distance = geolocator.Geolocator.distanceBetween(
-          userLat,
-          userLon,
-          geofenceLat,
-          geofenceLon,
-        );
-        isInside = distance <= radius;
-        print(
-          '🔍 Circle geofence result: $isInside (distance: $distance, radius: $radius)',
-        );
-      }
-    }
+    // Added By uday on 30_10_2025: Delegate validation to GeofenceService for consistency
+    final service = GeofenceService();
+    await service.refreshGeofenceStatus(_currentPosition!);
 
     _safeSetState(() {
-      _isInsideGeofence = isInside;
+      _isInsideGeofence = service.isInsideGeofenceStatus;
       _updateMapDisplay();
     });
-
-    // Also refresh status in shared GeofenceService so other widgets get updated
-    final service = GeofenceService();
-    service.refreshGeofenceStatus(_currentPosition!);
   }
 
-  // Consistent polygon validation algorithm matching GeofenceService
-  // Note: polygon parameter expects coordinates in [lon, lat] format (as received from server)
-  // polygon[i][0] = longitude, polygon[i][1] = latitude
-  bool _isPointInPolygonConsistent(
-    double lat, // User's latitude
-    double lon, // User's longitude
-    List<List<double>> polygon, // Polygon coordinates in [lon, lat] format
-  ) {
-    if (polygon.length < 3) {
-      print('⚠️ Polygon has less than 3 points, cannot validate');
-      return false;
-    }
-
-    bool inside = false;
-    int j = polygon.length - 1;
-
-    for (int i = 0; i < polygon.length; i++) {
-      // Server provides coordinates as [longitude, latitude]
-      final xi = polygon[i][0]; // longitude from server
-      final yi = polygon[i][1]; // latitude from server
-      final xj = polygon[j][0]; // longitude from server
-      final yj = polygon[j][1]; // latitude from server
-
-      // Ray casting algorithm with proper coordinate handling
-      // Compares latitude values (yi, yj) with user's latitude
-      // Compares longitude values (xi, xj) with user's longitude
-      if (((yi > lat) != (yj > lat)) &&
-          (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
-        inside = !inside;
-      }
-      j = i;
-    }
-
-    return inside;
-  }
+  // Removed By uday on 30_10_2025: Using GeofenceService validation to avoid divergence
 
   @override
   void dispose() {
@@ -438,12 +341,7 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
 
   // Zoom to current location
   void _zoomToCurrentLocation() {
-    if (_currentLocationPoint != null && _mapController != null) {
-      _mapController!.move(_currentLocationPoint!, 18.0);
-      print(
-        '📍 Zoomed to current location: ${_currentLocationPoint!.latitude}, ${_currentLocationPoint!.longitude}',
-      );
-    }
+    _moveCameraToCurrentLocationSafely(zoom: 18.0);
   }
 
   @override
@@ -669,6 +567,23 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
                         options: MapOptions(
                           initialCenter: _mapCenter!,
                           initialZoom: 16.0,
+                          // Added By uday on 30_10_2025: Mark map ready before using controller
+                          onMapReady: () {
+                            _isMapReady = true;
+                            if (_pendingCenter != null &&
+                                _mapController != null) {
+                              try {
+                                _mapController!.move(
+                                  _pendingCenter!,
+                                  _pendingZoom,
+                                );
+                              } catch (e) {
+                                // ignore: avoid_print
+                                print('⚠️ Deferred move failed: $e');
+                              }
+                              _pendingCenter = null;
+                            }
+                          },
                         ),
                         children: [
                           // OpenStreetMap tiles
@@ -798,6 +713,24 @@ class _GeofenceMapWidgetState extends State<GeofenceMapWidget> {
 
 // Helper to sync current widget geofence config into the shared service
 extension on _GeofenceMapWidgetState {
+  // Added By uday on 30_10_2025: Safely move camera, deferring until map ready
+  void _moveCameraToCurrentLocationSafely({double zoom = 16.0}) {
+    if (_currentLocationPoint == null || _mapController == null) return;
+    try {
+      if (_isMapReady) {
+        _mapController!.move(_currentLocationPoint!, zoom);
+      } else {
+        _pendingCenter = _currentLocationPoint;
+        _pendingZoom = zoom;
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('⚠️ MapController not ready, deferring move: $e');
+      _pendingCenter = _currentLocationPoint;
+      _pendingZoom = zoom;
+    }
+  }
+
   Future<void> _syncConfigToService() async {
     try {
       if (_geofenceConfig == null) return;

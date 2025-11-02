@@ -1,3 +1,13 @@
+// Added By uday on 30_10_2025: Google services Gradle plugin for Firebase
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.2")
+    }
+}
 allprojects {
     repositories {
         google()

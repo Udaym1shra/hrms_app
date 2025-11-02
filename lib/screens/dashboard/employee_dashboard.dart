@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/employee_provider.dart';
@@ -23,6 +24,8 @@ import '../../core/constants/app_values.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/constants/app_constants.dart';
 import '../../services/geofence_service.dart';
+import '../../utils/location_permission_helper.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class EmployeeDashboard extends StatefulWidget {
   const EmployeeDashboard({Key? key}) : super(key: key);
@@ -32,17 +35,21 @@ class EmployeeDashboard extends StatefulWidget {
 }
 
 class _EmployeeDashboardState extends State<EmployeeDashboard>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   int _selectedIndex = 0;
   bool _isSidebarOpen = false;
   late GeofenceService _geofenceService;
   bool _isGeofencingSupported = false;
   late AnimationController _sidebarController;
   late Animation<double> _sidebarAnimation;
+  StreamSubscription<String>? _fcmTokenSubscription;
 
   @override
   void initState() {
     super.initState();
+
+    // Add lifecycle observer to detect app state changes
+    WidgetsBinding.instance.addObserver(this);
 
     // Initialize sidebar animation controller FIRST (synchronously)
     _sidebarController = AnimationController(
@@ -61,10 +68,45 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     _initializeServices();
     _loadEmployeeData();
     _initializeGeofencing();
+
+    // Check location permission when app opens
+    _checkLocationPermissionOnAppStart();
+
+    // Ensure FCM topic subscription regardless of geofencing support
+    _subscribeEmployeeTopicIfAvailable();
+
+    // Re-subscribe to topic when FCM token is refreshed
+    _fcmTokenSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((
+      newToken,
+    ) async {
+      // ignore: avoid_print
+      print('FCM token refreshed: ' + (newToken));
+      await _subscribeEmployeeTopicIfAvailable();
+    });
+  }
+
+  // Check location permission when app opens
+  Future<void> _checkLocationPermissionOnAppStart() async {
+    // Wait for the widget to be fully built
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (!mounted) return;
+
+    // Check location status and request if needed
+    await LocationPermissionHelper.checkAndRequestLocationPermission(context);
+    // Added By uday on 30_10_2025: Nudge user to enable background (Allow all the time)
+    await LocationPermissionHelper.ensureBackgroundReady(context);
+    // Added By uday on 30_10_2025: Show Xiaomi background guidance
+    if (mounted) {
+      // Called within ensureBackgroundReady as well; keeping here ensures early prompt
+    }
   }
 
   @override
   void dispose() {
+    // Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+
     // Remove listener if provider is available
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -73,11 +115,54 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
       // Employee provider not available during dispose
     }
     _geofenceService.dispose();
+    _fcmTokenSubscription?.cancel();
     if (_sidebarController.isAnimating || _sidebarController.isCompleted) {
       _sidebarController.stop();
     }
     _sidebarController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    // When app comes back from background/resumed, reload employee data and check location
+    if (state == AppLifecycleState.resumed) {
+      // Small delay to ensure app is fully resumed
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (!mounted) return;
+
+        // Check location permission and service status when app resumes
+        await LocationPermissionHelper.checkAndRequestLocationPermission(
+          context,
+        );
+
+        final employeeProvider = Provider.of<EmployeeProvider>(
+          context,
+          listen: false,
+        );
+
+        // If we have cached employee data, show it immediately and refresh in background
+        if (employeeProvider.employee != null) {
+          // Force UI update to show cached data
+          setState(() {});
+          // Refresh in background without showing loading
+          _loadEmployeeData();
+        } else if (!employeeProvider.isLoading) {
+          // Only show loading if we don't have data and we're not already loading
+          _loadEmployeeData();
+        }
+
+        // Also ensure background service is still running if needed
+        _geofenceService.setApiService(employeeProvider.apiService);
+        // Added By uday on 30_10_2025: Ensure auto upload/service resumes after reopening app
+        await _resumeAutoUploadIfPunchedIn();
+
+        // Ensure FCM subscription on resume (covers cases after app updates/reinstalls)
+        await _subscribeEmployeeTopicIfAvailable();
+      });
+    }
   }
 
   void _toggleSidebar() {
@@ -135,6 +220,15 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
             employeeId: authProvider.user!.employeeId!,
             tenantId: tenantId,
           );
+        }
+
+        // Added By uday on 30_10_2025: Resume background uploads if already punched in
+        await _resumeAutoUploadIfPunchedIn();
+
+        // Added By uday on 30_10_2025: Ensure background readiness after init
+        if (mounted) {
+          await LocationPermissionHelper.ensureBackgroundReady(context);
+          // Xiaomi guidance handled inside ensureBackgroundReady
         }
       }
     } catch (e) {
@@ -204,7 +298,111 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     );
 
     if (authProvider.user?.employeeId != null) {
-      employeeProvider.fetchEmployeeById(authProvider.user!.employeeId!);
+      // Only fetch if not already loading or if we don't have employee data
+      if (!employeeProvider.isLoading && employeeProvider.employee == null) {
+        employeeProvider.fetchEmployeeById(authProvider.user!.employeeId!);
+      } else if (employeeProvider.employee != null) {
+        // If we already have employee data, just refresh it
+        employeeProvider.fetchEmployeeById(authProvider.user!.employeeId!);
+      }
+    }
+  }
+
+  // Refresh all dashboard data when pull-to-refresh is triggered
+  Future<void> _refreshDashboardData() async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final employeeProvider = Provider.of<EmployeeProvider>(
+        context,
+        listen: false,
+      );
+
+      // Refresh employee data
+      if (authProvider.user?.employeeId != null) {
+        await employeeProvider.fetchEmployeeById(
+          authProvider.user!.employeeId!,
+        );
+      }
+
+      // Refresh geofence configuration
+      if (_isGeofencingSupported && authProvider.user?.employeeId != null) {
+        final tenantId = await SessionStorage.getTenantId();
+        await _geofenceService.fetchGeofenceConfigFromServer(
+          employeeId: authProvider.user!.employeeId!,
+          tenantId: tenantId,
+        );
+      }
+
+      // Force UI update to show refreshed data
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      // Handle refresh error silently or show a snackbar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Refresh failed: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  // Refresh attendance data when pull-to-refresh is triggered
+  Future<void> _refreshAttendanceData() async {
+    try {
+      // Force UI update to refresh attendance data
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      // Handle refresh error silently or show a snackbar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Refresh failed: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  // Refresh profile data when pull-to-refresh is triggered
+  Future<void> _refreshProfileData() async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final employeeProvider = Provider.of<EmployeeProvider>(
+        context,
+        listen: false,
+      );
+
+      // Refresh employee data
+      if (authProvider.user?.employeeId != null) {
+        await employeeProvider.fetchEmployeeById(
+          authProvider.user!.employeeId!,
+        );
+      }
+
+      // Force UI update to show refreshed data
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      // Handle refresh error silently or show a snackbar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Refresh failed: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -220,6 +418,51 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
           authProvider.user?.employeeId != null &&
           !employeeProvider.isLoading) {
         employeeProvider.fetchEmployeeById(authProvider.user!.employeeId!);
+      }
+    } catch (_) {}
+  }
+
+  // Added By uday on 30_10_2025: Resume auto location upload if last log is PunchIn
+  Future<void> _resumeAutoUploadIfPunchedIn() async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      if (authProvider.user?.employeeId == null) return;
+
+      final employeeId = authProvider.user!.employeeId!;
+      final tenantId = await SessionStorage.getTenantId();
+
+      // Only proceed if we have an API service bound
+      final employeeProvider = Provider.of<EmployeeProvider>(
+        context,
+        listen: false,
+      );
+      _geofenceService.setApiService(employeeProvider.apiService);
+
+      // Added By uday on 30_10_2025: Ensure geofence is configured before starting uploads
+      if (!_geofenceService.isGeofencingEnabled) {
+        await _geofenceService.fetchGeofenceConfigFromServer(
+          employeeId: employeeId,
+          tenantId: tenantId,
+        );
+      }
+
+      // Check server logs to confirm punch-in state
+      final shouldRun = await _geofenceService
+          .shouldBackgroundServiceBeRunning();
+      if (shouldRun) {
+        // Start auto upload if not already active
+        if (!_geofenceService.isAutoLocationUploadActive()) {
+          _geofenceService.startAutoLocationUploadForEmployee(
+            employeeId: employeeId,
+            tenantId: tenantId ?? 0,
+          );
+        }
+
+        // Added By uday on 30_10_2025: Trigger a one-time immediate upload so we don't wait 1 minute
+        await _geofenceService.testUploadLocationOnce(
+          employeeId: employeeId,
+          tenantId: tenantId ?? 0,
+        );
       }
     } catch (_) {}
   }
@@ -351,185 +594,193 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   }
 
   Widget _buildDashboardContent(EmployeeProvider employeeProvider) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Profile Card or loading/error placeholder
-          if (employeeProvider.employee != null) ...[
-            ProfileCard(employee: employeeProvider.employee!),
-          ] else ...[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    if (employeeProvider.isLoading) ...[
-                      const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: AppDimensions.spacingM),
-                      const Text(AppStrings.loadingEmployee),
-                    ] else ...[
-                      const Icon(Icons.info_outline, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          employeeProvider.error ??
-                              AppStrings.employeeNotLoaded,
-                          style: TextStyle(color: AppTheme.textSecondary),
+    return RefreshIndicator(
+      onRefresh: () async {
+        // Refresh all dashboard data
+        await _refreshDashboardData();
+      },
+      child: SingleChildScrollView(
+        physics:
+            const AlwaysScrollableScrollPhysics(), // Enable pull-to-refresh even when content is short
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Profile Card or loading/error placeholder
+            if (employeeProvider.employee != null) ...[
+              ProfileCard(employee: employeeProvider.employee!),
+            ] else ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      if (employeeProvider.isLoading) ...[
+                        const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          final auth = Provider.of<AuthProvider>(
-                            context,
-                            listen: false,
-                          );
-                          if (auth.user?.employeeId != null) {
-                            employeeProvider.fetchEmployeeById(
-                              auth.user!.employeeId!,
+                        const SizedBox(width: AppDimensions.spacingM),
+                        const Text(AppStrings.loadingEmployee),
+                      ] else ...[
+                        const Icon(Icons.info_outline, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            employeeProvider.error ??
+                                AppStrings.employeeNotLoaded,
+                            style: TextStyle(color: AppTheme.textSecondary),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            final auth = Provider.of<AuthProvider>(
+                              context,
+                              listen: false,
                             );
-                          }
-                        },
-                        child: const Text('Retry'),
-                      ),
+                            if (auth.user?.employeeId != null) {
+                              employeeProvider.fetchEmployeeById(
+                                auth.user!.employeeId!,
+                              );
+                            }
+                          },
+                          child: const Text('Retry'),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
+            ],
+            const SizedBox(height: 24),
+
+            // Punch In/Out Widget
+            Consumer<EmployeeProvider>(
+              builder: (context, employeeProvider, child) {
+                return PunchInOutWidget(
+                  apiService: Provider.of<EmployeeProvider>(
+                    context,
+                    listen: false,
+                  ).apiService,
+                );
+              },
+            ),
+
+            const SizedBox(height: 24),
+
+            // Geofence Map
+            FutureBuilder<Map<String, dynamic>>(
+              future: _getEmployeeAndTenantData(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Center(
+                        child: Text(
+                          '${AppStrings.failedToLoadGeofenceConfig}: ${snapshot.error}',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppTheme.errorColor),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final data = snapshot.data ?? {};
+                final employeeId = data['employeeId'] ?? 0;
+                final tenantId = data['tenantId'] ?? 0;
+
+                if (employeeId == 0) {
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Center(
+                        child: Text(
+                          AppStrings.noDataFound,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppTheme.textSecondary),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                return Consumer<EmployeeProvider>(
+                  builder: (context, employeeProvider, child) {
+                    return GeofenceMapWidget(
+                      employeeId: employeeId,
+                      tenantId: tenantId,
+                      apiService: employeeProvider.apiService,
+                    );
+                  },
+                );
+              },
+            ),
+
+            const SizedBox(height: 24),
+
+            // Quick Stats
+            const QuickStatsWidget(),
+
+            const SizedBox(height: 24),
+
+            // Today's Location List
+            FutureBuilder<List<Map<String, dynamic>>>(
+              future: _getTodayLocationList(employeeProvider),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        'Failed to load today\'s locations: ${snapshot.error}',
+                        style: TextStyle(color: AppTheme.errorColor),
+                      ),
+                    ),
+                  );
+                }
+                final locations =
+                    snapshot.data ?? const <Map<String, dynamic>>[];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Today\'s Location Records',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
+                      ),
+                    ),
+                    LocationTable(locations: locations),
+                  ],
+                );
+              },
             ),
           ],
-          const SizedBox(height: 24),
-
-          // Punch In/Out Widget
-          Consumer<EmployeeProvider>(
-            builder: (context, employeeProvider, child) {
-              return PunchInOutWidget(
-                apiService: Provider.of<EmployeeProvider>(
-                  context,
-                  listen: false,
-                ).apiService,
-              );
-            },
-          ),
-
-          const SizedBox(height: 24),
-
-          // Geofence Map
-          FutureBuilder<Map<String, dynamic>>(
-            future: _getEmployeeAndTenantData(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                );
-              }
-
-              if (snapshot.hasError) {
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Center(
-                      child: Text(
-                        '${AppStrings.failedToLoadGeofenceConfig}: ${snapshot.error}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppTheme.errorColor,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-
-              final data = snapshot.data ?? {};
-              final employeeId = data['employeeId'] ?? 0;
-              final tenantId = data['tenantId'] ?? 0;
-
-              if (employeeId == 0) {
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Center(
-                      child: Text(
-                        AppStrings.noDataFound,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-
-              return Consumer<EmployeeProvider>(
-                builder: (context, employeeProvider, child) {
-                  return GeofenceMapWidget(
-                    employeeId: employeeId,
-                    tenantId: tenantId,
-                    apiService: employeeProvider.apiService,
-                  );
-                },
-              );
-            },
-          ),
-
-          const SizedBox(height: 24),
-
-          // Quick Stats
-          const QuickStatsWidget(),
-
-          const SizedBox(height: 24),
-
-          // Today's Location List
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: _getTodayLocationList(employeeProvider),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                );
-              }
-              if (snapshot.hasError) {
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Text(
-                      'Failed to load today\'s locations: ${snapshot.error}',
-                      style: TextStyle(color: AppTheme.errorColor),
-                    ),
-                  ),
-                );
-              }
-              final locations = snapshot.data ?? const <Map<String, dynamic>>[];
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'Today\'s Location Records',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                  ),
-                  LocationTable(locations: locations),
-                ],
-              );
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -578,75 +829,83 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   Widget _buildAttendanceContent() {
     return Consumer<EmployeeProvider>(
       builder: (context, employeeProvider, child) {
-        return FutureBuilder<Map<String, dynamic>?>(
-          future: _getTodayAttendanceData(employeeProvider),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
+        return RefreshIndicator(
+          onRefresh: () async {
+            // Refresh attendance data
+            await _refreshAttendanceData();
+          },
+          child: FutureBuilder<Map<String, dynamic>?>(
+            future: _getTodayAttendanceData(employeeProvider),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-            if (snapshot.hasError) {
-              return Center(
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: AppTheme.errorColor,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error loading attendance: ${snapshot.error}',
+                        style: TextStyle(color: AppTheme.errorColor),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() {}); // Refresh
+                        },
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              final attendanceData = snapshot.data;
+              if (attendanceData == null) {
+                return Center(child: Text(AppStrings.noDataFound));
+              }
+
+              return SingleChildScrollView(
+                physics:
+                    const AlwaysScrollableScrollPhysics(), // Enable pull-to-refresh
+                padding: const EdgeInsets.all(16),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: AppTheme.errorColor,
+                    // Attendance Status Card
+                    AttendanceStatusCard(attendanceData: attendanceData),
+                    const SizedBox(height: 16),
+
+                    // Punch In/Out Button
+                    PunchButtonWidget(
+                      attendanceData: attendanceData,
+                      onPunch: () => _handlePunchAction(
+                        _getNextPunchAction(attendanceData),
+                        attendanceData,
+                      ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      'Error loading attendance: ${snapshot.error}',
-                      style: TextStyle(color: AppTheme.errorColor),
-                      textAlign: TextAlign.center,
-                    ),
+
+                    // Attendance Details Card
+                    AttendanceDetailsCard(attendanceData: attendanceData),
                     const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        setState(() {}); // Refresh
-                      },
-                      child: const Text('Retry'),
-                    ),
+
+                    // Attendance Logs Card
+                    AttendanceLogsCard(attendanceData: attendanceData),
                   ],
                 ),
               );
-            }
-
-            final attendanceData = snapshot.data;
-            if (attendanceData == null) {
-              return Center(child: Text(AppStrings.noDataFound));
-            }
-
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Attendance Status Card
-                  AttendanceStatusCard(attendanceData: attendanceData),
-                  const SizedBox(height: 16),
-
-                  // Punch In/Out Button
-                  PunchButtonWidget(
-                    attendanceData: attendanceData,
-                    onPunch: () => _handlePunchAction(
-                      _getNextPunchAction(attendanceData),
-                      attendanceData,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Attendance Details Card
-                  AttendanceDetailsCard(attendanceData: attendanceData),
-                  const SizedBox(height: 16),
-
-                  // Attendance Logs Card
-                  AttendanceLogsCard(attendanceData: attendanceData),
-                ],
-              ),
-            );
-          },
+            },
+          ),
         );
       },
     );
@@ -713,6 +972,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
       Map<String, dynamic> response;
 
       if (action == 'PunchIn') {
+        // Added By uday on 30_10_2025: Enforce background-ready state BEFORE punch in
+        await LocationPermissionHelper.ensureBackgroundReady(context);
         response = await employeeProvider.apiService.punchIn(
           employeeId: employeeId,
           lat: position.latitude,
@@ -732,6 +993,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         final tenantId = await SessionStorage.getTenantId();
 
         if (action == 'PunchIn') {
+          // Permission check already done before punch in (line 976)
+          // No need to check again here to avoid repeated dialogs
           final employeeProvider = Provider.of<EmployeeProvider>(
             context,
             listen: false,
@@ -774,15 +1037,25 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   }
 
   Widget _buildProfileContent(EmployeeProvider employeeProvider) {
-    if (employeeProvider.employee == null) {
-      return Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
-        ),
-      );
-    }
-
-    return ProfileContentWidget(employee: employeeProvider.employee!);
+    return RefreshIndicator(
+      onRefresh: () async {
+        // Refresh profile data
+        await _refreshProfileData();
+      },
+      child: SingleChildScrollView(
+        physics:
+            const AlwaysScrollableScrollPhysics(), // Enable pull-to-refresh
+        child: employeeProvider.employee == null
+            ? Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    AppTheme.primaryColor,
+                  ),
+                ),
+              )
+            : ProfileContentWidget(employee: employeeProvider.employee!),
+      ),
+    );
   }
 
   Widget _buildComingSoonContent() {
@@ -859,6 +1132,13 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                 context,
                 listen: false,
               );
+              // Unsubscribe from employee topic before logging out
+              final empId = authProvider.user?.employeeId;
+              if (empId != null) {
+                try {
+                  await _unsubscribeEmployeeTopic(empId);
+                } catch (_) {}
+              }
               await authProvider.logout();
             },
             child: const Text(AppStrings.logout),
@@ -866,5 +1146,35 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         ],
       ),
     );
+  }
+
+  // Subscribe device to employee-specific topic the backend targets
+  Future<void> _subscribeEmployeeTopic(int employeeId) async {
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      final topic = 'hrms_employee_' + employeeId.toString();
+      await FirebaseMessaging.instance.subscribeToTopic(topic);
+    } catch (_) {}
+  }
+
+  Future<void> _unsubscribeEmployeeTopic(int employeeId) async {
+    try {
+      final topic = 'hrms_employee_' + employeeId.toString();
+      await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
+    } catch (_) {}
+  }
+
+  Future<void> _subscribeEmployeeTopicIfAvailable() async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final empId = authProvider.user?.employeeId;
+      if (empId != null) {
+        await _subscribeEmployeeTopic(empId);
+      }
+    } catch (_) {}
   }
 }

@@ -27,41 +27,56 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Added By uday on 30_10_2025: Initialize Firebase
+  bool firebaseInitialized = false;
   try {
     await Firebase.initializeApp();
+    firebaseInitialized = true;
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  } catch (_) {}
+    // ignore: avoid_print
+    print('✅ Firebase initialized successfully');
+  } catch (e) {
+    // ignore: avoid_print
+    print('❌ Firebase initialization failed: $e');
+  }
 
   // Added: FCM init for debugging and verification
-  try {
-    // Android 13+: request notifications
-    await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    // Log token to console so we can test from backend/firebase console
-    final token = await FirebaseMessaging.instance.getToken();
-    // ignore: avoid_print
-    print('FCM token (startup): ' + (token ?? 'null'));
-
-    // Foreground listener (logs only)
-    FirebaseMessaging.onMessage.listen((RemoteMessage m) {
-      final t = m.notification?.title ?? '';
-      final b = m.notification?.body ?? '';
-      // ignore: avoid_print
-      print(
-        'onMessage: title=' + t + ' body=' + b + ' data=' + m.data.toString(),
+  if (firebaseInitialized) {
+    try {
+      // Android 13+: request notifications
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
       );
-    });
 
-    // Opened from notification listener (background -> foreground)
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage m) {
+      // Log token to console so we can test from backend/firebase console
+      final token = await FirebaseMessaging.instance.getToken();
       // ignore: avoid_print
-      print('onMessageOpenedApp data=' + m.data.toString());
-    });
-  } catch (_) {}
+      print('FCM token (startup): ' + (token ?? 'null'));
+
+      // Foreground listener (logs only)
+      FirebaseMessaging.onMessage.listen((RemoteMessage m) {
+        final t = m.notification?.title ?? '';
+        final b = m.notification?.body ?? '';
+        // ignore: avoid_print
+        print(
+          'onMessage: title=' + t + ' body=' + b + ' data=' + m.data.toString(),
+        );
+      });
+
+      // Opened from notification listener (background -> foreground)
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage m) {
+        // ignore: avoid_print
+        print('onMessageOpenedApp data=' + m.data.toString());
+      });
+    } catch (e) {
+      // ignore: avoid_print
+      print('❌ Firebase Messaging setup failed: $e');
+    }
+  } else {
+    // ignore: avoid_print
+    print('⚠️ Skipping Firebase Messaging setup - Firebase not initialized');
+  }
 
   // Note: If your server sets android.notification.channelId, ensure the
   // channel exists in the app. Easiest: omit channelId on the server during

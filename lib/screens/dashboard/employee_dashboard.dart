@@ -17,6 +17,7 @@ import '../../widgets/attendance/attendance_details_card.dart';
 import '../../widgets/attendance/attendance_logs_card.dart';
 import '../../widgets/dashboard/quick_stats_widget.dart';
 import '../../widgets/geofence/location_table.dart';
+import '../../widgets/geofence/employee_location_map_widget.dart';
 import '../../widgets/dashboard/dashboard_app_bar.dart';
 import '../../widgets/profile/profile_content_widget.dart';
 import '../../core/constants/app_strings.dart';
@@ -26,6 +27,7 @@ import '../../core/constants/app_constants.dart';
 import '../../services/geofence_service.dart';
 import '../../utils/location_permission_helper.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 class EmployeeDashboard extends StatefulWidget {
   const EmployeeDashboard({Key? key}) : super(key: key);
@@ -75,14 +77,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     // Ensure FCM topic subscription regardless of geofencing support
     _subscribeEmployeeTopicIfAvailable();
 
-    // Re-subscribe to topic when FCM token is refreshed
-    _fcmTokenSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((
-      newToken,
-    ) async {
-      // ignore: avoid_print
-      print('FCM token refreshed: ' + (newToken));
-      await _subscribeEmployeeTopicIfAvailable();
-    });
+    // Re-subscribe to topic when FCM token is refreshed (only if Firebase is initialized)
+    _initializeFcmTokenRefreshListener();
   }
 
   // Check location permission when app opens
@@ -735,6 +731,24 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
             const SizedBox(height: 24),
 
+            // Employee Location Map
+            Consumer<EmployeeProvider>(
+              builder: (context, employeeProvider, child) {
+                final userData = employeeProvider.employee;
+                final employeeId = userData?.id;
+                if (employeeId == null) {
+                  return const SizedBox.shrink();
+                }
+
+                return EmployeeLocationMapWidget(
+                  employeeId: employeeId,
+                  apiService: employeeProvider.apiService,
+                );
+              },
+            ),
+
+            const SizedBox(height: 24),
+
             // Today's Location List
             FutureBuilder<List<Map<String, dynamic>>>(
               future: _getTodayLocationList(employeeProvider),
@@ -1127,19 +1141,68 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.of(context).pop();
-              final authProvider = Provider.of<AuthProvider>(
-                context,
-                listen: false,
+              Navigator.of(context).pop(); // Close confirmation dialog
+
+              // Show loading indicator
+              if (!mounted) return;
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (loadingContext) =>
+                    const Center(child: CircularProgressIndicator()),
               );
-              // Unsubscribe from employee topic before logging out
-              final empId = authProvider.user?.employeeId;
-              if (empId != null) {
+
+              try {
+                final authProvider = Provider.of<AuthProvider>(
+                  context,
+                  listen: false,
+                );
+                final employeeProvider = Provider.of<EmployeeProvider>(
+                  context,
+                  listen: false,
+                );
+
+                // Step 1: Stop geofence auto location upload and background service
                 try {
-                  await _unsubscribeEmployeeTopic(empId);
+                  _geofenceService.stopAutoLocationUpload();
                 } catch (_) {}
+
+                // Step 2: Unsubscribe from employee FCM topic
+                final empId = authProvider.user?.employeeId;
+                if (empId != null) {
+                  try {
+                    await _unsubscribeEmployeeTopic(empId);
+                  } catch (_) {}
+                }
+
+                // Step 3: Clear EmployeeProvider cached data
+                try {
+                  employeeProvider.clearEmployee();
+                } catch (_) {}
+
+                // Step 4: Clear SessionStorage (includes companyId)
+                try {
+                  await SessionStorage.clearSession();
+                } catch (_) {}
+
+                // Step 5: Perform logout (clears StorageService)
+                await authProvider.logout();
+              } catch (e) {
+                // Show error message
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Logout error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } finally {
+                // Close loading dialog
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
               }
-              await authProvider.logout();
             },
             child: const Text(AppStrings.logout),
           ),
@@ -1148,8 +1211,50 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     );
   }
 
+  // Check if Firebase is initialized
+  bool _isFirebaseInitialized() {
+    try {
+      Firebase.app();
+      return true;
+    } catch (e) {
+      // ignore: avoid_print
+      print('⚠️ Firebase not initialized: $e');
+      return false;
+    }
+  }
+
+  // Initialize FCM token refresh listener safely
+  void _initializeFcmTokenRefreshListener() {
+    if (!_isFirebaseInitialized()) {
+      // ignore: avoid_print
+      print(
+        '⚠️ Skipping FCM token refresh listener - Firebase not initialized',
+      );
+      return;
+    }
+
+    try {
+      _fcmTokenSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((
+        newToken,
+      ) async {
+        // ignore: avoid_print
+        print('FCM token refreshed: ' + (newToken));
+        await _subscribeEmployeeTopicIfAvailable();
+      });
+    } catch (e) {
+      // ignore: avoid_print
+      print('❌ Failed to initialize FCM token refresh listener: $e');
+    }
+  }
+
   // Subscribe device to employee-specific topic the backend targets
   Future<void> _subscribeEmployeeTopic(int employeeId) async {
+    if (!_isFirebaseInitialized()) {
+      // ignore: avoid_print
+      print('⚠️ Cannot subscribe to topic - Firebase not initialized');
+      return;
+    }
+
     try {
       await FirebaseMessaging.instance.requestPermission(
         alert: true,
@@ -1158,23 +1263,42 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
       );
       final topic = 'hrms_employee_' + employeeId.toString();
       await FirebaseMessaging.instance.subscribeToTopic(topic);
-    } catch (_) {}
+      // ignore: avoid_print
+      print('✅ Subscribed to topic: $topic');
+    } catch (e) {
+      // ignore: avoid_print
+      print('❌ Failed to subscribe to employee topic: $e');
+    }
   }
 
   Future<void> _unsubscribeEmployeeTopic(int employeeId) async {
+    if (!_isFirebaseInitialized()) {
+      return;
+    }
+
     try {
       final topic = 'hrms_employee_' + employeeId.toString();
       await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
-    } catch (_) {}
+    } catch (e) {
+      // ignore: avoid_print
+      print('❌ Failed to unsubscribe from employee topic: $e');
+    }
   }
 
   Future<void> _subscribeEmployeeTopicIfAvailable() async {
+    if (!_isFirebaseInitialized()) {
+      return;
+    }
+
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final empId = authProvider.user?.employeeId;
       if (empId != null) {
         await _subscribeEmployeeTopic(empId);
       }
-    } catch (_) {}
+    } catch (e) {
+      // ignore: avoid_print
+      print('❌ Failed to subscribe to employee topic (if available): $e');
+    }
   }
 }

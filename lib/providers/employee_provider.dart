@@ -1,29 +1,42 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/employee_models.dart';
 import '../services/api_service.dart';
+import 'auth_provider.dart';
 
-class EmployeeProvider with ChangeNotifier {
+// Employee State
+class EmployeeState {
+  final Employee? employee;
+  final bool isLoading;
+  final String? error;
+
+  EmployeeState({this.employee, this.isLoading = false, this.error});
+
+  EmployeeState copyWith({Employee? employee, bool? isLoading, String? error}) {
+    return EmployeeState(
+      employee: employee ?? this.employee,
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
+  }
+}
+
+// Employee State Notifier
+class EmployeeNotifier extends StateNotifier<EmployeeState> {
   final ApiService _apiService;
 
-  Employee? _employee;
-  bool _isLoading = false;
-  String? _error;
-
-  EmployeeProvider(this._apiService);
+  EmployeeNotifier(this._apiService) : super(EmployeeState());
 
   // Expose ApiService for widgets that need it
   ApiService get apiService => _apiService;
 
   // Getters
-  Employee? get employee => _employee;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
+  Employee? get employee => state.employee;
+  bool get isLoading => state.isLoading;
+  String? get error => state.error;
 
   // Fetch employee by ID
   Future<void> fetchEmployeeById(int employeeId) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
       // Debug fetch
@@ -36,21 +49,19 @@ class EmployeeProvider with ChangeNotifier {
       );
 
       if (response.error) {
-        _error = response.message;
+        state = state.copyWith(error: response.message, isLoading: false);
       } else {
-        _employee = response.content?.result?.data;
+        final employee = response.content?.result?.data;
         // ignore: avoid_print
         print(
-          '✅ Parsed employee: id=${_employee?.id}, name=${_employee?.fullName}',
+          '✅ Parsed employee: id=${employee?.id}, name=${employee?.fullName}',
         );
+        state = state.copyWith(employee: employee, isLoading: false);
       }
     } catch (e) {
-      _error = e.toString();
       // ignore: avoid_print
       print('❌ fetchEmployeeById error: $e');
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      state = state.copyWith(error: e.toString(), isLoading: false);
     }
   }
 
@@ -72,9 +83,7 @@ class EmployeeProvider with ChangeNotifier {
     bool? isbulk,
     String? employeeType,
   }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
       final response = await _apiService.getEmployees(
@@ -96,41 +105,48 @@ class EmployeeProvider with ChangeNotifier {
       );
 
       if (response.error) {
-        _error = response.message;
+        state = state.copyWith(error: response.message, isLoading: false);
         return [];
       } else {
         // Extract employees from the response
         final result = response.content?.result;
+        List<Employee> employees = [];
+
         if (result?.data != null) {
           // If it's a single employee, return it as a list
-          return [result!.data!];
+          employees = [result!.data!];
         } else if (result?.pagination != null) {
           // If it's a paginated list, extract the data array
           final data = result!.pagination!['data'];
           if (data is List) {
-            return data.map((e) => Employee.fromJson(e)).toList();
+            employees = data.map((e) => Employee.fromJson(e)).toList();
           }
         }
-        return [];
+
+        state = state.copyWith(isLoading: false);
+        return employees;
       }
     } catch (e) {
-      _error = e.toString();
+      state = state.copyWith(error: e.toString(), isLoading: false);
       return [];
-    } finally {
-      _isLoading = false;
-      notifyListeners();
     }
   }
 
   // Clear error
   void clearError() {
-    _error = null;
-    notifyListeners();
+    state = state.copyWith(error: null);
   }
 
   // Clear employee data
   void clearEmployee() {
-    _employee = null;
-    notifyListeners();
+    state = state.copyWith(employee: null);
   }
 }
+
+// Employee Provider
+final employeeProvider = StateNotifierProvider<EmployeeNotifier, EmployeeState>(
+  (ref) {
+    final apiService = ref.watch(apiServiceProvider);
+    return EmployeeNotifier(apiService);
+  },
+);

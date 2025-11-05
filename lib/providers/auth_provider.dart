@@ -1,81 +1,85 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/data/models/user_model.dart';
 import '../features/auth/data/models/auth_state_model.dart';
 import '../services/auth_service.dart';
+import '../services/storage_service.dart';
+import '../services/api_service.dart';
 
-class AuthProvider with ChangeNotifier {
+// Service providers for dependency injection
+// These will be overridden in main.dart with actual instances
+final storageServiceProvider = Provider<StorageService>((ref) {
+  throw UnimplementedError('StorageService must be overridden in main.dart');
+});
+
+final apiServiceProvider = Provider<ApiService>((ref) {
+  final storageService = ref.watch(storageServiceProvider);
+  return ApiService(storageService);
+});
+
+final authServiceProvider = Provider<AuthService>((ref) {
+  final apiService = ref.watch(apiServiceProvider);
+  final storageService = ref.watch(storageServiceProvider);
+  return AuthService(apiService, storageService);
+});
+
+// Auth State Notifier
+class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
-  
-  AuthState _state = AuthState();
-  
-  AuthProvider(this._authService) {
+
+  AuthNotifier(this._authService) : super(AuthState()) {
     _checkAuthStatus();
   }
 
   // Getters
-  bool get isAuthenticated => _state.isAuthenticated;
-  bool get isLoading => _state.isLoading;
-  String? get error => _state.error;
-  UserModel? get user => _state.user;
-  String? get token => _state.token;
+  bool get isAuthenticated => state.isAuthenticated;
+  bool get isLoading => state.isLoading;
+  String? get error => state.error;
+  UserModel? get user => state.user;
+  String? get token => state.token;
 
   // Check authentication status on app start
   Future<void> _checkAuthStatus() async {
-    _state = _state.copyWith(isLoading: true);
-    notifyListeners();
+    state = state.copyWith(isLoading: true);
 
     try {
-      _state = await _authService.checkAuthStatus();
+      state = await _authService.checkAuthStatus();
     } catch (e) {
-      _state = AuthState(
-        error: e.toString(),
-        isLoading: false,
-      );
+      state = AuthState(error: e.toString(), isLoading: false);
     }
-    
-    notifyListeners();
   }
 
   // Login method
-  Future<bool> login(String email, String password, {bool rememberMe = false}) async {
-    _state = _state.copyWith(isLoading: true, error: null);
-    notifyListeners();
+  Future<bool> login(
+    String email,
+    String password, {
+    bool rememberMe = false,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
-      _state = await _authService.login(email, password, rememberMe: rememberMe);
-      
-      if (_state.isAuthenticated) {
+      state = await _authService.login(email, password, rememberMe: rememberMe);
+
+      if (state.isAuthenticated) {
         return true;
       } else {
         return false;
       }
     } catch (e) {
-      _state = AuthState(
-        error: e.toString(),
-        isLoading: false,
-      );
+      state = AuthState(error: e.toString(), isLoading: false);
       return false;
-    } finally {
-      notifyListeners();
     }
   }
 
   // Logout method
   Future<void> logout() async {
-    _state = _state.copyWith(isLoading: true);
-    notifyListeners();
+    state = state.copyWith(isLoading: true);
 
     try {
       await _authService.logout();
-      _state = AuthState();
+      state = AuthState();
     } catch (e) {
-      _state = AuthState(
-        error: e.toString(),
-        isLoading: false,
-      );
+      state = AuthState(error: e.toString(), isLoading: false);
     }
-    
-    notifyListeners();
   }
 
   // Get remembered credentials
@@ -103,7 +107,12 @@ class AuthProvider with ChangeNotifier {
 
   // Clear error
   void clearError() {
-    _state = _state.copyWith(error: null);
-    notifyListeners();
+    state = state.copyWith(error: null);
   }
 }
+
+// Auth Provider
+final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
+  final authService = ref.watch(authServiceProvider);
+  return AuthNotifier(authService);
+});

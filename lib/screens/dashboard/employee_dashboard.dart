@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/employee_provider.dart';
+import '../../features/auth/data/models/auth_state_model.dart';
 import '../../utils/app_theme.dart';
 import '../../utils/session_storage.dart';
 import '../../widgets/sidebar.dart';
@@ -29,16 +31,18 @@ import '../../utils/location_permission_helper.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-class EmployeeDashboard extends StatefulWidget {
-  const EmployeeDashboard({Key? key}) : super(key: key);
+class EmployeeDashboard extends ConsumerStatefulWidget {
+  final int initialIndex;
+
+  const EmployeeDashboard({Key? key, this.initialIndex = 0}) : super(key: key);
 
   @override
-  State<EmployeeDashboard> createState() => _EmployeeDashboardState();
+  ConsumerState<EmployeeDashboard> createState() => _EmployeeDashboardState();
 }
 
-class _EmployeeDashboardState extends State<EmployeeDashboard>
+class _EmployeeDashboardState extends ConsumerState<EmployeeDashboard>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
   bool _isSidebarOpen = false;
   late GeofenceService _geofenceService;
   bool _isGeofencingSupported = false;
@@ -49,6 +53,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   @override
   void initState() {
     super.initState();
+
+    // Initialize selected index from widget parameter
+    _selectedIndex = widget.initialIndex;
 
     // Add lifecycle observer to detect app state changes
     WidgetsBinding.instance.addObserver(this);
@@ -103,13 +110,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
 
-    // Remove listener if provider is available
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      authProvider.removeListener(_ensureEmployeeLoaded);
-    } catch (_) {
-      // Employee provider not available during dispose
-    }
+    // Riverpod doesn't require removing listeners
     _geofenceService.dispose();
     _fcmTokenSubscription?.cancel();
     if (_sidebarController.isAnimating || _sidebarController.isCompleted) {
@@ -134,24 +135,22 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
           context,
         );
 
-        final employeeProvider = Provider.of<EmployeeProvider>(
-          context,
-          listen: false,
-        );
+        final employeeState = ref.read(employeeProvider);
 
         // If we have cached employee data, show it immediately and refresh in background
-        if (employeeProvider.employee != null) {
+        if (employeeState.employee != null) {
           // Force UI update to show cached data
           setState(() {});
           // Refresh in background without showing loading
           _loadEmployeeData();
-        } else if (!employeeProvider.isLoading) {
+        } else if (!employeeState.isLoading) {
           // Only show loading if we don't have data and we're not already loading
           _loadEmployeeData();
         }
 
         // Also ensure background service is still running if needed
-        _geofenceService.setApiService(employeeProvider.apiService);
+        final employeeNotifier = ref.read(employeeProvider.notifier);
+        _geofenceService.setApiService(employeeNotifier.apiService);
         // Added By uday on 30_10_2025: Ensure auto upload/service resumes after reopening app
         await _resumeAutoUploadIfPunchedIn();
 
@@ -198,22 +197,19 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         await _geofenceService.initialize();
 
         // Set API service
-        final employeeProvider = Provider.of<EmployeeProvider>(
-          context,
-          listen: false,
-        );
-        _geofenceService.setApiService(employeeProvider.apiService);
+        final employeeNotifier = ref.read(employeeProvider.notifier);
+        _geofenceService.setApiService(employeeNotifier.apiService);
 
         // Listen to geofence status changes
 
         // Load geofence configuration for the employee
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        if (authProvider.user?.employeeId != null) {
+        final authState = ref.read(authProvider);
+        if (authState.user?.employeeId != null) {
           // Get tenantId using the improved method
           final tenantId = await SessionStorage.getTenantId();
 
           await _geofenceService.fetchGeofenceConfigFromServer(
-            employeeId: authProvider.user!.employeeId!,
+            employeeId: authState.user!.employeeId!,
             tenantId: tenantId,
           );
         }
@@ -287,19 +283,17 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   }
 
   void _loadEmployeeData() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final employeeProvider = Provider.of<EmployeeProvider>(
-      context,
-      listen: false,
-    );
+    final authState = ref.read(authProvider);
+    final employeeState = ref.read(employeeProvider);
+    final employeeNotifier = ref.read(employeeProvider.notifier);
 
-    if (authProvider.user?.employeeId != null) {
+    if (authState.user?.employeeId != null) {
       // Only fetch if not already loading or if we don't have employee data
-      if (!employeeProvider.isLoading && employeeProvider.employee == null) {
-        employeeProvider.fetchEmployeeById(authProvider.user!.employeeId!);
-      } else if (employeeProvider.employee != null) {
+      if (!employeeState.isLoading && employeeState.employee == null) {
+        employeeNotifier.fetchEmployeeById(authState.user!.employeeId!);
+      } else if (employeeState.employee != null) {
         // If we already have employee data, just refresh it
-        employeeProvider.fetchEmployeeById(authProvider.user!.employeeId!);
+        employeeNotifier.fetchEmployeeById(authState.user!.employeeId!);
       }
     }
   }
@@ -307,24 +301,19 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   // Refresh all dashboard data when pull-to-refresh is triggered
   Future<void> _refreshDashboardData() async {
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final employeeProvider = Provider.of<EmployeeProvider>(
-        context,
-        listen: false,
-      );
+      final authState = ref.read(authProvider);
+      final employeeNotifier = ref.read(employeeProvider.notifier);
 
       // Refresh employee data
-      if (authProvider.user?.employeeId != null) {
-        await employeeProvider.fetchEmployeeById(
-          authProvider.user!.employeeId!,
-        );
+      if (authState.user?.employeeId != null) {
+        await employeeNotifier.fetchEmployeeById(authState.user!.employeeId!);
       }
 
       // Refresh geofence configuration
-      if (_isGeofencingSupported && authProvider.user?.employeeId != null) {
+      if (_isGeofencingSupported && authState.user?.employeeId != null) {
         final tenantId = await SessionStorage.getTenantId();
         await _geofenceService.fetchGeofenceConfigFromServer(
-          employeeId: authProvider.user!.employeeId!,
+          employeeId: authState.user!.employeeId!,
           tenantId: tenantId,
         );
       }
@@ -371,17 +360,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   // Refresh profile data when pull-to-refresh is triggered
   Future<void> _refreshProfileData() async {
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final employeeProvider = Provider.of<EmployeeProvider>(
-        context,
-        listen: false,
-      );
+      final authState = ref.read(authProvider);
+      final employeeNotifier = ref.read(employeeProvider.notifier);
 
       // Refresh employee data
-      if (authProvider.user?.employeeId != null) {
-        await employeeProvider.fetchEmployeeById(
-          authProvider.user!.employeeId!,
-        );
+      if (authState.user?.employeeId != null) {
+        await employeeNotifier.fetchEmployeeById(authState.user!.employeeId!);
       }
 
       // Force UI update to show refreshed data
@@ -402,37 +386,18 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     }
   }
 
-  // Ensure employee data is fetched when auth user becomes available
-  void _ensureEmployeeLoaded() {
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final employeeProvider = Provider.of<EmployeeProvider>(
-        context,
-        listen: false,
-      );
-      if (employeeProvider.employee == null &&
-          authProvider.user?.employeeId != null &&
-          !employeeProvider.isLoading) {
-        employeeProvider.fetchEmployeeById(authProvider.user!.employeeId!);
-      }
-    } catch (_) {}
-  }
-
   // Added By uday on 30_10_2025: Resume auto location upload if last log is PunchIn
   Future<void> _resumeAutoUploadIfPunchedIn() async {
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      if (authProvider.user?.employeeId == null) return;
+      final authState = ref.read(authProvider);
+      if (authState.user?.employeeId == null) return;
 
-      final employeeId = authProvider.user!.employeeId!;
+      final employeeId = authState.user!.employeeId!;
       final tenantId = await SessionStorage.getTenantId();
 
       // Only proceed if we have an API service bound
-      final employeeProvider = Provider.of<EmployeeProvider>(
-        context,
-        listen: false,
-      );
-      _geofenceService.setApiService(employeeProvider.apiService);
+      final employeeNotifier = ref.read(employeeProvider.notifier);
+      _geofenceService.setApiService(employeeNotifier.apiService);
 
       // Added By uday on 30_10_2025: Ensure geofence is configured before starting uploads
       if (!_geofenceService.isGeofencingEnabled) {
@@ -467,129 +432,125 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   Widget build(BuildContext context) {
     final isMobile =
         MediaQuery.of(context).size.width <= AppValues.mobileBreakpoint;
+    final authState = ref.watch(authProvider);
+    final employeeState = ref.watch(employeeProvider);
 
-    return Consumer2<AuthProvider, EmployeeProvider>(
-      builder: (context, authProvider, employeeProvider, child) {
-        return Scaffold(
-          backgroundColor: AppTheme.backgroundColor,
-          body: Stack(
-            children: [
-              // Desktop Layout with Sidebar
-              if (!isMobile)
-                Row(
-                  children: [
-                    // Desktop Sidebar (permanent)
-                    Sidebar(
-                      user: authProvider.user,
-                      selectedIndex: _selectedIndex,
-                      onItemSelected: _onSidebarItemSelected,
-                      onLogout: _handleLogout,
-                      onClose: null,
-                    ),
-
-                    // Main Content
-                    Expanded(
-                      child: SafeArea(
-                        top: false,
-                        child: Column(
-                          children: [
-                            // Top App Bar
-                            _buildAppBar(context, authProvider),
-
-                            // Main Content Area
-                            Expanded(
-                              child: _buildMainContent(employeeProvider),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundColor,
+      body: Stack(
+        children: [
+          // Desktop Layout with Sidebar
+          if (!isMobile)
+            Row(
+              children: [
+                // Desktop Sidebar (permanent)
+                Sidebar(
+                  user: authState.user,
+                  selectedIndex: _selectedIndex,
+                  onItemSelected: _onSidebarItemSelected,
+                  onLogout: _handleLogout,
+                  onClose: null,
                 ),
 
-              // Mobile Layout without Sidebar in main content
-              if (isMobile)
-                Column(
-                  children: [
-                    // Top App Bar
-                    _buildAppBar(context, authProvider),
+                // Main Content
+                Expanded(
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      children: [
+                        // Top App Bar
+                        _buildAppBar(context, authState),
 
-                    // Main Content Area
-                    Expanded(
-                      child: SafeArea(
-                        top: false,
-                        child: _buildMainContent(employeeProvider),
-                      ),
-                    ),
-                  ],
-                ),
-
-              // Mobile backdrop overlay with animation
-              if (isMobile && _isSidebarOpen)
-                FadeTransition(
-                  opacity: _sidebarAnimation,
-                  child: GestureDetector(
-                    onTap: _closeSidebar,
-                    child: Container(
-                      color: Colors.black.withOpacity(0.5),
-                      child: const SizedBox.expand(),
+                        // Main Content Area
+                        Expanded(child: _buildMainContent(employeeState)),
+                      ],
                     ),
                   ),
                 ),
+              ],
+            ),
 
-              // Mobile Sidebar (slides in from left)
-              if (isMobile)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(-1.0, 0.0),
-                      end: Offset.zero,
-                    ).animate(_sidebarAnimation),
-                    child: IgnorePointer(
-                      ignoring: !_isSidebarOpen,
-                      child: Sidebar(
-                        user: authProvider.user,
-                        selectedIndex: _selectedIndex,
-                        onItemSelected: _onSidebarItemSelected,
-                        onLogout: _handleLogout,
-                        onClose: _closeSidebar,
-                      ),
-                    ),
+          // Mobile Layout without Sidebar in main content
+          if (isMobile)
+            Column(
+              children: [
+                // Top App Bar
+                _buildAppBar(context, authState),
+
+                // Main Content Area
+                Expanded(
+                  child: SafeArea(
+                    top: false,
+                    child: _buildMainContent(employeeState),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+
+          // Mobile backdrop overlay with animation
+          if (isMobile && _isSidebarOpen)
+            FadeTransition(
+              opacity: _sidebarAnimation,
+              child: GestureDetector(
+                onTap: _closeSidebar,
+                child: Container(
+                  color: Colors.black.withOpacity(0.5),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
+
+          // Mobile Sidebar (slides in from left)
+          if (isMobile)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(-1.0, 0.0),
+                  end: Offset.zero,
+                ).animate(_sidebarAnimation),
+                child: IgnorePointer(
+                  ignoring: !_isSidebarOpen,
+                  child: Sidebar(
+                    user: authState.user,
+                    selectedIndex: _selectedIndex,
+                    onItemSelected: _onSidebarItemSelected,
+                    onLogout: _handleLogout,
+                    onClose: _closeSidebar,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
-  Widget _buildAppBar(BuildContext context, AuthProvider authProvider) {
+  Widget _buildAppBar(BuildContext context, AuthState authState) {
     return DashboardAppBar(
       title: _getPageTitle(),
       onMenuPressed: _toggleSidebar,
     );
   }
 
-  Widget _buildMainContent(EmployeeProvider employeeProvider) {
+  Widget _buildMainContent(EmployeeState employeeState) {
     switch (_selectedIndex) {
       case 0:
-        return _buildDashboardContent(employeeProvider);
+        return _buildDashboardContent(employeeState);
       case 6:
         return _buildAttendanceContent();
       case 7:
         return _buildLeavesContent();
       case 11:
-        return _buildProfileContent(employeeProvider);
+        return _buildProfileContent(employeeState);
       default:
         return _buildComingSoonContent();
     }
   }
 
-  Widget _buildDashboardContent(EmployeeProvider employeeProvider) {
+  Widget _buildDashboardContent(EmployeeState employeeState) {
     return RefreshIndicator(
       onRefresh: () async {
         // Refresh all dashboard data
@@ -603,15 +564,15 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Profile Card or loading/error placeholder
-            if (employeeProvider.employee != null) ...[
-              ProfileCard(employee: employeeProvider.employee!),
+            if (employeeState.employee != null) ...[
+              ProfileCard(employee: employeeState.employee!),
             ] else ...[
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      if (employeeProvider.isLoading) ...[
+                      if (employeeState.isLoading) ...[
                         const SizedBox(
                           height: 20,
                           width: 20,
@@ -624,20 +585,19 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            employeeProvider.error ??
-                                AppStrings.employeeNotLoaded,
+                            employeeState.error ?? AppStrings.employeeNotLoaded,
                             style: TextStyle(color: AppTheme.textSecondary),
                           ),
                         ),
                         TextButton(
                           onPressed: () {
-                            final auth = Provider.of<AuthProvider>(
-                              context,
-                              listen: false,
+                            final authState = ref.read(authProvider);
+                            final employeeNotifier = ref.read(
+                              employeeProvider.notifier,
                             );
-                            if (auth.user?.employeeId != null) {
-                              employeeProvider.fetchEmployeeById(
-                                auth.user!.employeeId!,
+                            if (authState.user?.employeeId != null) {
+                              employeeNotifier.fetchEmployeeById(
+                                authState.user!.employeeId!,
                               );
                             }
                           },
@@ -652,13 +612,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
             const SizedBox(height: 24),
 
             // Punch In/Out Widget
-            Consumer<EmployeeProvider>(
-              builder: (context, employeeProvider, child) {
+            Consumer(
+              builder: (context, ref, child) {
+                final employeeNotifier = ref.read(employeeProvider.notifier);
                 return PunchInOutWidget(
-                  apiService: Provider.of<EmployeeProvider>(
-                    context,
-                    listen: false,
-                  ).apiService,
+                  apiService: employeeNotifier.apiService,
                 );
               },
             ),
@@ -712,12 +670,15 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                   );
                 }
 
-                return Consumer<EmployeeProvider>(
-                  builder: (context, employeeProvider, child) {
+                return Consumer(
+                  builder: (context, ref, child) {
+                    final employeeNotifier = ref.read(
+                      employeeProvider.notifier,
+                    );
                     return GeofenceMapWidget(
                       employeeId: employeeId,
                       tenantId: tenantId,
-                      apiService: employeeProvider.apiService,
+                      apiService: employeeNotifier.apiService,
                     );
                   },
                 );
@@ -732,9 +693,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
             const SizedBox(height: 24),
 
             // Employee Location Map
-            Consumer<EmployeeProvider>(
-              builder: (context, employeeProvider, child) {
-                final userData = employeeProvider.employee;
+            Consumer(
+              builder: (context, ref, child) {
+                final employeeState = ref.watch(employeeProvider);
+                final employeeNotifier = ref.read(employeeProvider.notifier);
+                final userData = employeeState.employee;
                 final employeeId = userData?.id;
                 if (employeeId == null) {
                   return const SizedBox.shrink();
@@ -742,7 +705,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
                 return EmployeeLocationMapWidget(
                   employeeId: employeeId,
-                  apiService: employeeProvider.apiService,
+                  apiService: employeeNotifier.apiService,
                 );
               },
             ),
@@ -751,7 +714,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
             // Today's Location List
             FutureBuilder<List<Map<String, dynamic>>>(
-              future: _getTodayLocationList(employeeProvider),
+              future: _getTodayLocationList(employeeState),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Card(
@@ -800,7 +763,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   }
 
   Future<List<Map<String, dynamic>>> _getTodayLocationList(
-    EmployeeProvider employeeProvider,
+    EmployeeState employeeState,
   ) async {
     try {
       final userData = await SessionStorage.getUserData();
@@ -813,7 +776,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
       final date =
           '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
-      final resp = await employeeProvider.apiService.getEmployeeLocationList(
+      final employeeNotifier = ref.read(employeeProvider.notifier);
+      final resp = await employeeNotifier.apiService.getEmployeeLocationList(
         employeeId: employeeId,
         date: date,
         limit: 100,
@@ -841,15 +805,16 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
   }
 
   Widget _buildAttendanceContent() {
-    return Consumer<EmployeeProvider>(
-      builder: (context, employeeProvider, child) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final employeeState = ref.watch(employeeProvider);
         return RefreshIndicator(
           onRefresh: () async {
             // Refresh attendance data
             await _refreshAttendanceData();
           },
           child: FutureBuilder<Map<String, dynamic>?>(
-            future: _getTodayAttendanceData(employeeProvider),
+            future: _getTodayAttendanceData(employeeState),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -927,7 +892,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
   // Get today's attendance data
   Future<Map<String, dynamic>?> _getTodayAttendanceData(
-    EmployeeProvider employeeProvider,
+    EmployeeState employeeState,
   ) async {
     try {
       final userData = await SessionStorage.getUserData();
@@ -941,7 +906,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
       if (employeeId == null || tenantId == null) return null;
 
-      final response = await employeeProvider.apiService.getTodayAttendance(
+      final employeeNotifier = ref.read(employeeProvider.notifier);
+      final response = await employeeNotifier.apiService.getTodayAttendance(
         employeeId,
         tenantId,
       );
@@ -979,23 +945,20 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      final employeeProvider = Provider.of<EmployeeProvider>(
-        context,
-        listen: false,
-      );
+      final employeeNotifier = ref.read(employeeProvider.notifier);
       Map<String, dynamic> response;
 
       if (action == 'PunchIn') {
         // Added By uday on 30_10_2025: Enforce background-ready state BEFORE punch in
         await LocationPermissionHelper.ensureBackgroundReady(context);
-        response = await employeeProvider.apiService.punchIn(
+        response = await employeeNotifier.apiService.punchIn(
           employeeId: employeeId,
           lat: position.latitude,
           lon: position.longitude,
           dateWithTime: DateTime.now().toIso8601String(),
         );
       } else {
-        response = await employeeProvider.apiService.punchOut(
+        response = await employeeNotifier.apiService.punchOut(
           employeeId: employeeId,
           lat: position.latitude,
           lon: position.longitude,
@@ -1009,11 +972,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
         if (action == 'PunchIn') {
           // Permission check already done before punch in (line 976)
           // No need to check again here to avoid repeated dialogs
-          final employeeProvider = Provider.of<EmployeeProvider>(
-            context,
-            listen: false,
-          );
-          _geofenceService.setApiService(employeeProvider.apiService);
+          _geofenceService.setApiService(employeeNotifier.apiService);
           _geofenceService.startAutoLocationUploadForEmployee(
             employeeId: employeeId,
             tenantId: tenantId ?? 0,
@@ -1050,7 +1009,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     );
   }
 
-  Widget _buildProfileContent(EmployeeProvider employeeProvider) {
+  Widget _buildProfileContent(EmployeeState employeeState) {
     return RefreshIndicator(
       onRefresh: () async {
         // Refresh profile data
@@ -1059,7 +1018,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
       child: SingleChildScrollView(
         physics:
             const AlwaysScrollableScrollPhysics(), // Enable pull-to-refresh
-        child: employeeProvider.employee == null
+        child: employeeState.employee == null
             ? Center(
                 child: CircularProgressIndicator(
                   valueColor: AlwaysStoppedAnimation<Color>(
@@ -1067,7 +1026,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                   ),
                 ),
               )
-            : ProfileContentWidget(employee: employeeProvider.employee!),
+            : ProfileContentWidget(employee: employeeState.employee!),
       ),
     );
   }
@@ -1126,6 +1085,25 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     if (MediaQuery.of(context).size.width <= AppValues.mobileBreakpoint) {
       _closeSidebar();
     }
+
+    // Navigate using GoRouter based on index
+    switch (index) {
+      case 0:
+        context.go('/dashboard');
+        break;
+      case 6:
+        context.go('/dashboard/attendance');
+        break;
+      case 7:
+        context.go('/dashboard/leaves');
+        break;
+      case 11:
+        context.go('/dashboard/profile');
+        break;
+      default:
+        context.go('/dashboard?index=$index');
+        break;
+    }
   }
 
   void _handleLogout() {
@@ -1153,14 +1131,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
               );
 
               try {
-                final authProvider = Provider.of<AuthProvider>(
-                  context,
-                  listen: false,
-                );
-                final employeeProvider = Provider.of<EmployeeProvider>(
-                  context,
-                  listen: false,
-                );
+                final authNotifier = ref.read(authProvider.notifier);
+                final employeeNotifier = ref.read(employeeProvider.notifier);
+                final authState = ref.read(authProvider);
 
                 // Step 1: Stop geofence auto location upload and background service
                 try {
@@ -1168,7 +1141,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                 } catch (_) {}
 
                 // Step 2: Unsubscribe from employee FCM topic
-                final empId = authProvider.user?.employeeId;
+                final empId = authState.user?.employeeId;
                 if (empId != null) {
                   try {
                     await _unsubscribeEmployeeTopic(empId);
@@ -1177,7 +1150,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
 
                 // Step 3: Clear EmployeeProvider cached data
                 try {
-                  employeeProvider.clearEmployee();
+                  employeeNotifier.clearEmployee();
                 } catch (_) {}
 
                 // Step 4: Clear SessionStorage (includes companyId)
@@ -1186,7 +1159,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
                 } catch (_) {}
 
                 // Step 5: Perform logout (clears StorageService)
-                await authProvider.logout();
+                await authNotifier.logout();
               } catch (e) {
                 // Show error message
                 if (mounted) {
@@ -1291,8 +1264,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard>
     }
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final empId = authProvider.user?.employeeId;
+      final authState = ref.read(authProvider);
+      final empId = authState.user?.employeeId;
       if (empId != null) {
         await _subscribeEmployeeTopic(empId);
       }

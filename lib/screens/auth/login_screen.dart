@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -23,12 +24,14 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _loadRememberedCredentials();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadRememberedCredentials();
+    });
   }
 
   void _loadRememberedCredentials() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final credentials = authProvider.getRememberedCredentials();
+    final authNotifier = ref.read(authProvider.notifier);
+    final credentials = authNotifier.getRememberedCredentials();
     if (credentials != null) {
       _emailController.text = credentials['email'] ?? '';
       _passwordController.text = credentials['password'] ?? '';
@@ -50,17 +53,21 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await authProvider.login(
+    final authNotifier = ref.read(authProvider.notifier);
+    final success = await authNotifier.login(
       _emailController.text.trim(),
       _passwordController.text,
       rememberMe: _rememberMe,
     );
 
-    if (!success && mounted) {
+    if (success && mounted) {
+      // Navigate to dashboard after successful login
+      context.go('/dashboard');
+    } else if (!success && mounted) {
+      final authState = ref.read(authProvider);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(authProvider.error ?? 'Login failed'),
+          content: Text(authState.error ?? 'Login failed'),
           backgroundColor: AppTheme.errorColor,
         ),
       );
@@ -195,12 +202,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 32),
 
                 // Login Button
-                Consumer<AuthProvider>(
-                  builder: (context, authProvider, child) {
+                Consumer(
+                  builder: (context, ref, child) {
+                    final authState = ref.watch(authProvider);
                     return CustomButton(
                       text: 'Sign In',
-                      onPressed: authProvider.isLoading ? null : _handleLogin,
-                      isLoading: authProvider.isLoading,
+                      onPressed: authState.isLoading ? null : _handleLogin,
+                      isLoading: authState.isLoading,
                     );
                   },
                 ),
@@ -208,9 +216,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
 
                 // Error Message
-                Consumer<AuthProvider>(
-                  builder: (context, authProvider, child) {
-                    if (authProvider.error != null) {
+                Consumer(
+                  builder: (context, ref, child) {
+                    final authState = ref.watch(authProvider);
+                    if (authState.error != null) {
                       return Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -230,7 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                authProvider.error!,
+                                authState.error!,
                                 style: TextStyle(color: AppTheme.errorColor),
                               ),
                             ),
@@ -280,17 +289,16 @@ class _LoginScreenState extends State<LoginScreen> {
             onPressed: () async {
               if (emailController.text.isNotEmpty) {
                 try {
-                  final authProvider = Provider.of<AuthProvider>(
-                    context,
-                    listen: false,
-                  );
-                  await authProvider.forgotPassword(emailController.text);
+                  final authNotifier = ref.read(authProvider.notifier);
+                  await authNotifier.forgotPassword(emailController.text);
 
                   if (mounted) {
                     Navigator.of(context).pop();
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Password reset email sent successfully'),
+                        content: const Text(
+                          'Password reset email sent successfully',
+                        ),
                         backgroundColor: AppTheme.successColor,
                       ),
                     );
